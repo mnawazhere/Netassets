@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Navy + white design tokens (shadcn-style semantic variables).
+   Light: white surfaces, navy ink. Dark: navy surfaces, white ink. */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 217 68% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 217 68% 12%;
+    --primary: 217 68% 14%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 217 33% 95%;
+    --secondary-foreground: 217 68% 14%;
+    --muted: 217 33% 95%;
+    --muted-foreground: 217 15% 45%;
+    --accent: 217 33% 92%;
+    --accent-foreground: 217 68% 14%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 25% 88%;
+    --input: 217 25% 88%;
+    --ring: 217 68% 14%;
+    --gain: 152 60% 32%;
+    --loss: 0 72% 45%;
+  }
+
+  .dark:root {
+    --background: 220 60% 7%;
+    --foreground: 210 30% 96%;
+    --card: 219 50% 10%;
+    --card-foreground: 210 30% 96%;
+    --primary: 213 85% 68%;
+    --primary-foreground: 220 60% 7%;
+    --secondary: 218 35% 16%;
+    --secondary-foreground: 210 30% 96%;
+    --muted: 218 35% 16%;
+    --muted-foreground: 215 18% 65%;
+    --accent: 218 35% 20%;
+    --accent-foreground: 210 30% 96%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 210 30% 96%;
+    --border: 218 30% 20%;
+    --input: 218 30% 20%;
+    --ring: 213 85% 68%;
+    --gain: 152 55% 55%;
+    --loss: 0 80% 65%;
+  }
+}
