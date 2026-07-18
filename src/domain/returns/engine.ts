@@ -46,6 +46,11 @@ export interface ReturnBreakdown {
   returnPerHourMinor: number | null;
   /** Annualized money-weighted return; null when the stream has no solution. */
   xirr: number | null;
+  /**
+   * Simple total MONEY return (§5 display rules): (gross − money) / basis.
+   * Labor OUT, NOT annualized — the row/headline %. Null when basis is 0.
+   */
+  moneyReturnFraction: number | null;
 }
 
 const COST_BASIS_TYPES = new Set(['BUY']);
@@ -99,6 +104,7 @@ export function computeAssetReturn(input: AssetReturnInput): ReturnBreakdown {
     trueProfitMinor: trueProfit,
     returnPerHourMinor: returnPerHour,
     xirr: xirr(flows),
+    moneyReturnFraction: costBasis > 0 ? (grossGain - moneyCosts) / costBasis : null,
   };
 }
 
@@ -136,9 +142,10 @@ export function computePortfolioReturn(inputs: AssetReturnInput[]): ReturnBreakd
   const grossGain = sum((r) => r.grossGainMinor);
   const moneyCosts = sum((r) => r.monetaryCostsMinor);
   const laborCost = sum((r) => r.laborCostMinor);
+  const costBasis = sum((r) => r.costBasisMinor);
 
   return {
-    costBasisMinor: sum((r) => r.costBasisMinor),
+    costBasisMinor: costBasis,
     realizedProceedsMinor: sum((r) => r.realizedProceedsMinor),
     incomeMinor: sum((r) => r.incomeMinor),
     monetaryCostsMinor: moneyCosts,
@@ -148,6 +155,7 @@ export function computePortfolioReturn(inputs: AssetReturnInput[]): ReturnBreakd
     trueProfitMinor: grossGain - moneyCosts - laborCost,
     returnPerHourMinor: totalHours > 0 ? (grossGain - moneyCosts) / totalHours : null,
     xirr: xirr(flows),
+    moneyReturnFraction: costBasis > 0 ? (grossGain - moneyCosts) / costBasis : null,
   };
 }
 

@@ -163,8 +163,12 @@ Three complementary headline metrics — keep them DISTINCT, never merge:
   AED 208/hr vs a 300 baseline → not worth it.
 
 **Display rules (learned from device testing — required):**
-- The per-row / headline return **%** shown in lists is the MONEY return
-  (labor OUT). **NEVER blend labor into a % divided by cost basis** — on a
+- The per-row / headline return **%** shown in lists is the **simple total
+  MONEY return** (labor OUT): `(gross − money) / cost_basis`. **NOT
+  annualized** — annualizing on a row reintroduces the same explosion as
+  per-hour (a 2-week-old position up 4% annualizes to +900%/yr). The
+  annualized **XIRR** figure lives on the **asset-detail** screen, not the
+  row. And **NEVER blend labor into a % divided by cost basis** — on a
   cheap, time-heavy asset (a ¥5,800 box that took 5 hrs) that produces an
   absurd figure like −423% even though the asset appreciated 7.7×, because
   the time cost dwarfs the tiny cost basis. Time cost is real, but it is
@@ -283,6 +287,12 @@ stale silently, and the same name imports as a second asset. Layered:
 
 Nice-to-have: on selection from the static index too, fire one test-fetch so
 the picker confirms "✓ will track" before the asset is committed.
+
+**Security — the AI fallback's API key:** store it in the iOS Keychain
+(`expo-secure-store`), NEVER in the `settings` table and NEVER through the
+audited `change_log` path — that path logs every settings change, and a key
+written there is a plaintext credential sitting in an on-disk audit log.
+Cloud fallback is off by default; a missing key just leaves it dormant.
 
 ---
 

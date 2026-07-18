@@ -4,8 +4,9 @@ import { Pressable, ScrollView, View } from 'react-native';
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
+import { listRowMetrics } from '@/domain/display';
 import { usePortfolio } from '@/hooks/data';
-import { money, percent, perHour } from '@/lib/format';
+import { money, percent } from '@/lib/format';
 
 export default function AssetsScreen() {
   const { view, loading } = usePortfolio();
@@ -35,9 +36,9 @@ export default function AssetsScreen() {
           </CardHeader>
           <CardContent className="gap-3">
             {assets.map((a) => {
-              const b = a.breakdown;
-              const trueReturn =
-                b && b.costBasisMinor > 0 ? b.trueProfitMinor / b.costBasisMinor : null;
+              // §5 display rules: rows show the simple total MONEY return
+              // only — labor never blends into a %, per-hour never renders here.
+              const row = listRowMetrics(a.breakdown, a.valuation?.stale ?? false);
               const nwEntry = view.netWorth.perAsset.find((p) => p.id === a.id);
               return (
                 <Link key={a.id} href={{ pathname: '/asset/[id]', params: { id: a.id } }} asChild>
@@ -50,21 +51,21 @@ export default function AssetsScreen() {
                         {nwEntry
                           ? money(nwEntry.valueMinor, view.baseCurrency, { compact: true })
                           : '—'}
-                        {a.valuation?.stale ? ' *' : ''}
+                        {row.stale ? ' *' : ''}
                       </Text>
                     </View>
-                    <View className="flex-row justify-between">
-                      <Text variant="muted">true return {percent(trueReturn)}</Text>
-                      <Text
-                        className={`text-sm ${
-                          b?.returnPerHourMinor != null &&
-                          b.returnPerHourMinor >= view.hourlyRateMinor
+                    <Text
+                      className={`text-sm ${
+                        row.moneyReturnFraction == null
+                          ? 'text-muted-foreground'
+                          : row.moneyReturnFraction >= 0
                             ? 'text-gain'
-                            : 'text-muted-foreground'
-                        }`}>
-                        {b ? perHour(b.returnPerHourMinor, view.baseCurrency) : '—'}
-                      </Text>
-                    </View>
+                            : 'text-loss'
+                      }`}>
+                      {row.moneyReturnFraction == null
+                        ? 'return —'
+                        : `${row.moneyReturnFraction >= 0 ? '+' : ''}${percent(row.moneyReturnFraction)}`}
+                    </Text>
                   </Pressable>
                 </Link>
               );

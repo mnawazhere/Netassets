@@ -4,6 +4,7 @@ import { ScrollView, View } from 'react-native';
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
+import { shouldShowPerHour } from '@/domain/display';
 import { useAssetDetail } from '@/hooks/data';
 import { hours, money, percent, perHour, shortDate, signedMoney } from '@/lib/format';
 
@@ -88,22 +89,33 @@ export default function AssetDetailScreen() {
                 value={signedMoney(b.trueProfitMinor, base)}
                 accent={b.trueProfitMinor >= 0 ? 'gain' : 'loss'}
               />
+              <Row label="Money return (simple)" value={percent(b.moneyReturnFraction)} />
               <Row label="Annualized (XIRR)" value={percent(b.xirr)} />
-              <Row
-                label="Return per hour"
-                value={perHour(b.returnPerHourMinor, base)}
-                accent={
-                  b.returnPerHourMinor != null && b.returnPerHourMinor >= portfolio.hourlyRateMinor
-                    ? 'gain'
-                    : 'loss'
-                }
-              />
-              <Text variant="muted" className="mt-1 text-xs">
-                baseline: your rate {money(portfolio.hourlyRateMinor, base)}/hr —{' '}
-                {b.returnPerHourMinor != null && b.returnPerHourMinor >= portfolio.hourlyRateMinor
-                  ? 'worth it'
-                  : 'the day job beat it'}
-              </Text>
+              {shouldShowPerHour(b.totalHours) ? (
+                <>
+                  <Row
+                    label="Return per hour"
+                    value={perHour(b.returnPerHourMinor, base)}
+                    accent={
+                      b.returnPerHourMinor != null &&
+                      b.returnPerHourMinor >= portfolio.hourlyRateMinor
+                        ? 'gain'
+                        : 'loss'
+                    }
+                  />
+                  <Text variant="muted" className="mt-1 text-xs">
+                    baseline: your rate {money(portfolio.hourlyRateMinor, base)}/hr —{' '}
+                    {b.returnPerHourMinor != null &&
+                    b.returnPerHourMinor >= portfolio.hourlyRateMinor
+                      ? 'worth it'
+                      : 'the day job beat it'}
+                  </Text>
+                </>
+              ) : (
+                <Text variant="muted" className="mt-1 text-xs">
+                  under an hour invested — per-hour not meaningful
+                </Text>
+              )}
             </CardContent>
           </Card>
         ) : null}
