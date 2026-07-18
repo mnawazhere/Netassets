@@ -12,13 +12,14 @@ import { transactions } from '@/db/schema';
 import type { AssetClass, TransactionType } from '@/db/schema';
 import { normalizeAccount } from '@/domain/position';
 import { parseEtoroCsv } from '@/domain/ingestion/etoro';
-import { toMinor } from '@/domain/money';
+import { convertMinor, fromMinor, toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
 import { changesFor } from '@/repositories/changeLog';
 import { listAssets, valuationMarksFor } from '@/repositories/assets';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
 import { primePrice, refreshPriceFor } from '@/services/pricing';
+import { fetchFxRate } from '@/services/providers';
 import { ensureAsset } from '@/services/resolution';
 import { getAnthropicKey, setAnthropicKey } from '@/services/secureKeys';
 import { pendingReviews, resolveReview } from '@/repositories/reviewQueue';
@@ -50,8 +51,16 @@ export function usePortfolio(): {
   }, [reload]);
 
   React.useEffect(() => {
-    void reload();
-  }, [reload]);
+    let cancelled = false;
+    void computePortfolioView(db, todayISO()).then((v) => {
+      if (cancelled) return;
+      setView(v);
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return { view, loading, reload, refresh };
 }
@@ -61,8 +70,8 @@ export function usePortfolio(): {
 export interface AssetDetail {
   portfolio: PortfolioView;
   entry: PortfolioView['assets'][number] | null;
-  marks: Array<{ date: string; valueMinor: number; currency: string }>;
-  txns: Array<{
+  marks: { date: string; valueMinor: number; currency: string }[];
+  txns: {
     id: string;
     type: string;
     date: string;
@@ -70,7 +79,7 @@ export interface AssetDetail {
     currency: string;
     hoursSpent: number;
     sourceAccount: string | null;
-  }>;
+  }[];
 }
 
 export function useAssetDetail(assetId: string): { detail: AssetDetail | null } {
@@ -287,7 +296,7 @@ export async function importEtoroCsvFile(): Promise<
 
 export function useReviewQueue() {
   const [items, setItems] = React.useState<
-    Array<{ id: string; reason: string; payload: string; createdAt: string }>
+    { id: string; reason: string; payload: string; createdAt: string }[]
   >([]);
 
   const reload = React.useCallback(async () => {
@@ -295,8 +304,14 @@ export function useReviewQueue() {
   }, []);
 
   React.useEffect(() => {
-    void reload();
-  }, [reload]);
+    let cancelled = false;
+    void pendingReviews(db).then((rows) => {
+      if (!cancelled) setItems(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const resolve = React.useCallback(
     async (id: string, decision: 'kept' | 'merged' | 'discarded') => {
@@ -311,33 +326,69 @@ export function useReviewQueue() {
 
 // ---------- settings ----------
 
+/** Currency the stored hourly rate is denominated in — MUST track the base
+ *  currency, because the return engine reads hourly_rate_minor as base minor
+ *  units (baseCurrency.ts: "already in base currency"). */
+async function hourlyRateCurrency(): Promise<string> {
+  return (
+    (await getSetting(db, SETTING_KEYS.hourlyRateCurrency)) ??
+    (await getSetting(db, SETTING_KEYS.baseCurrency)) ??
+    'AED'
+  ).toUpperCase();
+}
+
+async function loadSettingsData() {
+  const rate = await getSetting(db, SETTING_KEYS.hourlyRateMinor);
+  const rateCurrency = await hourlyRateCurrency();
+  const defaults: Record<string, string> = {};
+  for (const cls of Object.keys(CLASS_HOURS_DEFAULTS) as AssetClass[]) {
+    defaults[cls] = String(await classHoursDefault(cls));
+  }
+  return {
+    // Scale by the rate's own currency — a blanket /100 corrupts JPY/KWD.
+    hourlyRate: rate !== null ? String(fromMinor(Number(rate), rateCurrency)) : '',
+    baseCurrency: (await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED',
+    timeDefaults: defaults,
+    audit: (await changesFor(db, 'settings', SETTING_KEYS.hourlyRateMinor)).slice(0, 10),
+  };
+}
+
 export function useSettingsData() {
   const [hourlyRate, setHourlyRateState] = React.useState<string>('');
   const [baseCurrency, setBaseCurrencyState] = React.useState<string>('AED');
   const [timeDefaults, setTimeDefaults] = React.useState<Record<string, string>>({});
   const [audit, setAudit] = React.useState<
-    Array<{ entity: string; field: string; oldValue: string | null; newValue: string | null; timestamp: string; source: string }>
+    { entity: string; field: string; oldValue: string | null; newValue: string | null; timestamp: string; source: string }[]
   >([]);
 
   const reload = React.useCallback(async () => {
-    const rate = await getSetting(db, SETTING_KEYS.hourlyRateMinor);
-    setHourlyRateState(rate !== null ? String(Number(rate) / 100) : '');
-    setBaseCurrencyState((await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED');
-    const defaults: Record<string, string> = {};
-    for (const cls of Object.keys(CLASS_HOURS_DEFAULTS) as AssetClass[]) {
-      defaults[cls] = String(await classHoursDefault(cls));
-    }
-    setTimeDefaults(defaults);
-    setAudit((await changesFor(db, 'settings', SETTING_KEYS.hourlyRateMinor)).slice(0, 10));
+    const s = await loadSettingsData();
+    setHourlyRateState(s.hourlyRate);
+    setBaseCurrencyState(s.baseCurrency);
+    setTimeDefaults(s.timeDefaults);
+    setAudit(s.audit);
   }, []);
 
   React.useEffect(() => {
-    void reload();
-  }, [reload]);
+    let cancelled = false;
+    void loadSettingsData().then((s) => {
+      if (cancelled) return;
+      setHourlyRateState(s.hourlyRate);
+      setBaseCurrencyState(s.baseCurrency);
+      setTimeDefaults(s.timeDefaults);
+      setAudit(s.audit);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const saveHourlyRate = React.useCallback(
-    async (aedPerHour: string) => {
-      await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(toMinor(aedPerHour, 'AED')), 'manual');
+    async (ratePerHour: string) => {
+      // Stored in BASE-currency minor units at the base currency's scale.
+      const base = ((await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED').toUpperCase();
+      await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(toMinor(ratePerHour, base)), 'manual');
+      await setSetting(db, SETTING_KEYS.hourlyRateCurrency, base, 'manual');
       await reload();
     },
     [reload]
@@ -345,7 +396,22 @@ export function useSettingsData() {
 
   const saveBaseCurrency = React.useCallback(
     async (code: string) => {
-      await setSetting(db, SETTING_KEYS.baseCurrency, code.toUpperCase(), 'manual');
+      const next = code.toUpperCase();
+      // Re-denominate the stored hourly rate into the new base so labor
+      // keeps its worth (and, at minimum, the new currency's minor scale).
+      const stored = await getSetting(db, SETTING_KEYS.hourlyRateMinor);
+      const rateCurrency = await hourlyRateCurrency();
+      if (stored !== null && rateCurrency !== next) {
+        const fx = await fetchFxRate(rateCurrency, next);
+        const minor = fx
+          ? convertMinor(Number(stored), rateCurrency, next, fx.rate)
+          : // Offline fallback: keep the displayed number, fix the scale — a
+            // visible-and-editable rate beats a silent 100x scale corruption.
+            toMinor(fromMinor(Number(stored), rateCurrency), next);
+        await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(minor), 'system');
+        await setSetting(db, SETTING_KEYS.hourlyRateCurrency, next, 'system');
+      }
+      await setSetting(db, SETTING_KEYS.baseCurrency, next, 'manual');
       await reload();
     },
     [reload]
@@ -382,8 +448,18 @@ export function useAiSettings() {
   }, []);
 
   React.useEffect(() => {
-    void reload();
-  }, [reload]);
+    let cancelled = false;
+    void Promise.all([getSetting(db, SETTING_KEYS_AI.aiFallbackEnabled), getAnthropicKey()]).then(
+      ([enabledSetting, key]) => {
+        if (cancelled) return;
+        setEnabled(enabledSetting === 'true');
+        setHasKey(key !== null);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const setAiEnabled = React.useCallback(
     async (on: boolean) => {

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import type { Db } from '@/db/client';
-import { reviewItems } from '@/db/schema';
+import { reviewItems, transactions } from '@/db/schema';
 import type { ParsedTransaction } from '@/domain/ingestion/types';
 import type { BindingCandidate } from '@/domain/symbols/bindingGate';
 import { nowISO, uuid } from '@/lib/uuid';
@@ -76,6 +76,11 @@ export async function pendingReviews(db: Db) {
   return db.select().from(reviewItems).where(eq(reviewItems.status, 'pending'));
 }
 
+/** SQLite unique-constraint violation, same message text on every driver. */
+function isUniqueViolation(err: unknown): boolean {
+  return err instanceof Error && err.message.includes('UNIQUE constraint failed');
+}
+
 /**
  * One-tap resolution (spec §6):
  * - keep: it's a real second transaction → insert it.
@@ -83,6 +88,12 @@ export async function pendingReviews(db: Db) {
  * - merge: same trade, better number → update the existing row's amount.
  * All paths mark the item resolved; keep/merge write change_log via the
  * transactions repository.
+ *
+ * The write pair (side effect, then status flip) has no transaction around
+ * it (the sqlite driver's transaction API takes a sync callback, which our
+ * async repositories can't run inside), so each path is idempotent instead:
+ * a retry after a crash between the two writes detects the already-applied
+ * side effect and proceeds straight to marking the item resolved.
  */
 export async function resolveReview(
   db: Db,
@@ -112,28 +123,44 @@ export async function resolveReview(
   const payload = JSON.parse(item.payload) as ParsedTransaction;
 
   if (decision === 'kept') {
-    await insertTransaction(
-      db,
-      {
-        assetId: item.assetId,
-        type: payload.type,
-        date: payload.date,
-        amountMinor: payload.amountMinor,
-        currency: payload.currency,
-        quantity: payload.quantity ?? null,
-        hoursSpent: payload.hoursSpent ?? 0,
-        sourceAccount: payload.sourceAccount ?? null,
-        // Disambiguate from the colliding row: a kept duplicate is a real,
-        // distinct trade — synthesize a txn id so the fingerprint differs.
-        sourceTxnId: payload.sourceTxnId ?? `review-kept:${id}`,
-        sourceRef: item.importId,
-        note: payload.note ?? null,
-      },
-      'manual'
-    );
+    try {
+      await insertTransaction(
+        db,
+        {
+          assetId: item.assetId,
+          type: payload.type,
+          date: payload.date,
+          amountMinor: payload.amountMinor,
+          currency: payload.currency,
+          quantity: payload.quantity ?? null,
+          hoursSpent: payload.hoursSpent ?? 0,
+          sourceAccount: payload.sourceAccount ?? null,
+          // Disambiguate from the colliding row: a kept duplicate is a real,
+          // distinct trade — synthesize a txn id so the fingerprint differs.
+          sourceTxnId: payload.sourceTxnId ?? `review-kept:${id}`,
+          sourceRef: item.importId,
+          note: payload.note ?? null,
+        },
+        'manual'
+      );
+    } catch (err) {
+      // A prior 'keep' that died before the status flip already inserted
+      // this row — the deterministic sourceTxnId reproduces the identical
+      // fingerprint, so the retry lands on transactions_fingerprint_uq.
+      // The side effect exists; fall through and resolve the item.
+      if (!isUniqueViolation(err)) throw err;
+    }
   } else if (decision === 'merged') {
     if (!item.conflictsWith) throw new Error('merge needs a conflicting transaction');
-    await updateTransactionAmount(db, item.conflictsWith, payload.amountMinor, 'manual');
+    // Skip the write when a prior 'merge' already applied this amount but
+    // died before the status flip — re-running would duplicate the audit row.
+    const existing = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, item.conflictsWith));
+    if (existing[0]?.amountMinor !== payload.amountMinor) {
+      await updateTransactionAmount(db, item.conflictsWith, payload.amountMinor, 'manual');
+    }
   }
 
   await db

@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import type { Db } from '@/db/client';
 import { changeLog, type ChangeSource } from '@/db/schema';
@@ -31,6 +31,6 @@ export async function changesFor(db: Db, entity: string, entityId: string) {
   return db
     .select()
     .from(changeLog)
-    .where(eq(changeLog.entityId, entityId))
+    .where(and(eq(changeLog.entity, entity), eq(changeLog.entityId, entityId)))
     .orderBy(desc(changeLog.timestamp));
 }

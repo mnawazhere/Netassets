@@ -87,7 +87,7 @@ export const anthropicProposer: Proposer = async (query, cls) => {
     });
     clearTimeout(timer);
     if (!res.ok) return null;
-    const body = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    const body = (await res.json()) as { content?: { type: string; text?: string }[] };
     const text = body.content?.find((b) => b.type === 'text')?.text ?? '';
     const jsonMatch = /\{[\s\S]*\}/.exec(text);
     if (!jsonMatch) return null;

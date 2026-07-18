@@ -69,6 +69,17 @@ describe('7B-3 acceptance — AI fallback gates', () => {
     expect(await db.select().from(schema.symbolMappings)).toHaveLength(0);
   });
 
+  it('verifyCandidate is the gate itself: a failing test-fetch rejects without re-proposing', async () => {
+    const proposer = jest.fn(async () => ferrariCandidate);
+    const outcome = await verifyCandidate(ferrariCandidate, {
+      proposer,
+      testFetch: async () => null, // provider says: symbol does not price
+      aiEnabled: async () => true,
+    });
+    expect(outcome).toEqual({ outcome: 'unpriced', reason: 'test-fetch-failed' });
+    expect(proposer).not.toHaveBeenCalled(); // the gate verifies; it never proposes
+  });
+
   it('a passing test-fetch is STILL pending — confirmation is the second mandatory gate', async () => {
     const outcome = await aiFallback(db, 'Ferrari', 'EQUITY', {
       proposer: async () => ferrariCandidate,

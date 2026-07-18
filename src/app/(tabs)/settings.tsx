@@ -17,8 +17,20 @@ export default function SettingsScreen() {
   const [defaults, setDefaults] = React.useState<Record<string, string>>({});
   const [keyInput, setKeyInput] = React.useState('');
 
-  React.useEffect(() => setRate(s.hourlyRate), [s.hourlyRate]);
-  React.useEffect(() => setDefaults(s.timeDefaults), [s.timeDefaults]);
+  // Resync local edit state during render only when the stored value actually
+  // changed (compared by content) — a content-identical reload must not clobber
+  // in-progress edits.
+  const [prevRate, setPrevRate] = React.useState(s.hourlyRate);
+  if (prevRate !== s.hourlyRate) {
+    setPrevRate(s.hourlyRate);
+    setRate(s.hourlyRate);
+  }
+  const defaultsSnapshot = JSON.stringify(s.timeDefaults);
+  const [prevDefaults, setPrevDefaults] = React.useState(defaultsSnapshot);
+  if (prevDefaults !== defaultsSnapshot) {
+    setPrevDefaults(defaultsSnapshot);
+    setDefaults(s.timeDefaults);
+  }
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-4 p-4">
@@ -93,7 +105,7 @@ export default function SettingsScreen() {
         </CardHeader>
         <CardContent className="gap-3">
           <Text variant="muted" className="text-sm">
-            When a security isn't in the offline index, the AI can propose a match — it only
+            When a security isn&apos;t in the offline index, the AI can propose a match — it only
             fires on a miss, and nothing binds without a live price check AND your confirmation.
           </Text>
           <ChipRow

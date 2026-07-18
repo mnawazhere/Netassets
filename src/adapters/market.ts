@@ -6,7 +6,7 @@ import type { CashTxn } from '@/domain/returns/engine';
 import type { PricePoint, Valuation } from './types';
 
 export function marketValuation(
-  txns: Array<CashTxn & { quantity?: number | null }>,
+  txns: (CashTxn & { quantity?: number | null })[],
   price: PricePoint,
   opts: { fresh: boolean }
 ): Valuation {

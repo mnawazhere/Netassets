@@ -18,8 +18,8 @@ export function usePortfolio(): {
 export interface AssetDetail {
   portfolio: PortfolioView;
   entry: PortfolioView['assets'][number] | null;
-  marks: Array<{ date: string; valueMinor: number; currency: string }>;
-  txns: Array<{
+  marks: { date: string; valueMinor: number; currency: string }[];
+  txns: {
     id: string;
     type: string;
     date: string;
@@ -27,7 +27,7 @@ export interface AssetDetail {
     currency: string;
     hoursSpent: number;
     sourceAccount: string | null;
-  }>;
+  }[];
 }
 
 export function useAssetDetail(_assetId: string): { detail: AssetDetail | null } {
@@ -47,7 +47,7 @@ export async function classHoursDefault(cls: AssetClass): Promise<number> {
 }
 
 export async function listAssetOptions(): Promise<
-  Array<{ id: string; name: string; class: AssetClass; currency: string; symbol: string | null }>
+  { id: string; name: string; class: AssetClass; currency: string; symbol: string | null }[]
 > {
   return [];
 }
@@ -114,7 +114,7 @@ export async function importEtoroCsvFile(): Promise<
 
 export function useReviewQueue() {
   return {
-    items: [] as Array<{ id: string; reason: string; payload: string; createdAt: string }>,
+    items: [] as { id: string; reason: string; payload: string; createdAt: string }[],
     resolve: async (_id: string, _d: 'kept' | 'merged' | 'discarded') => {},
     reload: async () => {},
   };
@@ -125,14 +125,14 @@ export function useSettingsData() {
     hourlyRate: '',
     baseCurrency: 'AED',
     timeDefaults: {} as Record<string, string>,
-    audit: [] as Array<{
+    audit: [] as {
       entity: string;
       field: string;
       oldValue: string | null;
       newValue: string | null;
       timestamp: string;
       source: string;
-    }>,
+    }[],
     saveHourlyRate: async (_v: string) => {},
     saveBaseCurrency: async (_v: string) => {},
     saveTimeDefault: async (_c: string, _h: string) => {},

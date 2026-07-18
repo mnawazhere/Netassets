@@ -3,7 +3,7 @@ import { Alert, ScrollView, View } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { ChipRow } from '@/components/ui/chip';
+import { Chip, ChipRow } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import type { AssetClass, TransactionType } from '@/db/schema';
@@ -43,6 +43,7 @@ export default function CaptureScreen() {
   const [knownAccounts, setKnownAccounts] = React.useState<string[]>([]);
   const [location, setLocation] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [resolvingId, setResolvingId] = React.useState<string | null>(null);
 
   const reloadAssets = React.useCallback(async () => {
     setAssets(await listAssetOptions());
@@ -50,8 +51,16 @@ export default function CaptureScreen() {
   }, []);
 
   React.useEffect(() => {
-    void reloadAssets();
-  }, [reloadAssets]);
+    let cancelled = false;
+    void Promise.all([listAssetOptions(), listKnownAccounts()]).then(([opts, accounts]) => {
+      if (cancelled) return;
+      setAssets(opts);
+      setKnownAccounts(accounts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     void (async () => {
@@ -61,9 +70,6 @@ export default function CaptureScreen() {
   }, [assetId, newAssetClass, assets]);
 
   const selected = assets.find((a) => a.id === assetId) ?? null;
-  React.useEffect(() => {
-    if (selected) setCurrency(selected.currency);
-  }, [selected]);
 
   const activeClass = assetId ? (selected?.class ?? null) : newAssetClass;
   const isMarketTxn = activeClass !== null && MARKET_CLASSES.has(activeClass);
@@ -169,6 +175,25 @@ export default function CaptureScreen() {
     }
   };
 
+  const onResolveReview = async (
+    item: { id: string; reason: string },
+    decision: 'kept' | 'merged' | 'discarded'
+  ) => {
+    setResolvingId(item.id);
+    try {
+      await review.resolve(item.id, decision);
+      // A confirmed binding changes the asset (bound + priced) — refresh so
+      // the capture form's options don't keep the stale unbound asset.
+      if (item.reason === 'binding-confirm') await reloadAssets();
+    } catch (e) {
+      // e.g. double-tap raced the reload: 'Review item already kept/discarded'.
+      Alert.alert('Could not resolve', String(e instanceof Error ? e.message : e));
+      await review.reload();
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-4 p-4">
       <Card>
@@ -206,16 +231,16 @@ export default function CaptureScreen() {
                 return (
                   <View key={item.id} className="gap-2 border-b border-border pb-3">
                     <Text className="text-sm">
-                      "{p.candidate.forQuery}" matched {b.displayName} — {b.symbol} ·{' '}
+                      “{p.candidate.forQuery}” matched {b.displayName} — {b.symbol} ·{' '}
                       {(p.fetchedPriceMinor / 100).toFixed(2)} {b.currency}
                     </Text>
                     <Text variant="muted" className="text-xs">
-                      Fuzzy match from an import — confirm it's the right security before it
-                      auto-prices. Until then it's tracked unpriced.
+                      Fuzzy match from an import — confirm it’s the right security before it
+                      auto-prices. Until then it’s tracked unpriced.
                     </Text>
                     <View className="flex-row gap-2">
-                      <Button label="Track" size="sm" onPress={() => review.resolve(item.id, 'kept')} />
-                      <Button label="Don't track" size="sm" variant="outline" onPress={() => review.resolve(item.id, 'discarded')} />
+                      <Button label="Track" size="sm" disabled={resolvingId !== null} onPress={() => void onResolveReview(item, 'kept')} />
+                      <Button label="Don't track" size="sm" variant="outline" disabled={resolvingId !== null} onPress={() => void onResolveReview(item, 'discarded')} />
                     </View>
                   </View>
                 );
@@ -237,11 +262,11 @@ export default function CaptureScreen() {
                       : 'Almost identical to an existing transaction (rounding difference).'}
                   </Text>
                   <View className="flex-row gap-2">
-                    <Button label="Keep" size="sm" onPress={() => review.resolve(item.id, 'kept')} />
+                    <Button label="Keep" size="sm" disabled={resolvingId !== null} onPress={() => void onResolveReview(item, 'kept')} />
                     {item.reason === 'near-match' ? (
-                      <Button label="Merge" size="sm" variant="secondary" onPress={() => review.resolve(item.id, 'merged')} />
+                      <Button label="Merge" size="sm" variant="secondary" disabled={resolvingId !== null} onPress={() => void onResolveReview(item, 'merged')} />
                     ) : null}
-                    <Button label="Discard" size="sm" variant="outline" onPress={() => review.resolve(item.id, 'discarded')} />
+                    <Button label="Discard" size="sm" variant="outline" disabled={resolvingId !== null} onPress={() => void onResolveReview(item, 'discarded')} />
                   </View>
                 </View>
               );
@@ -256,11 +281,24 @@ export default function CaptureScreen() {
         </CardHeader>
         <CardContent className="gap-3">
           <Text variant="muted">Asset</Text>
-          <ChipRow
-            options={['+ new', ...assets.map((a) => a.name)] as readonly string[]}
-            value={assetId ? (selected?.name ?? null) : '+ new'}
-            onChange={(name) => setAssetId(name === '+ new' ? null : (assets.find((a) => a.name === name)?.id ?? null))}
-          />
+          {/* Chips keyed/selected by asset id, not name — duplicate names must
+              not collide, and an asset literally named '+ new' must not hit
+              the sentinel. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+            <Chip label="+ new" selected={assetId === null} onPress={() => setAssetId(null)} />
+            {assets.map((a) => (
+              <Chip
+                key={a.id}
+                label={a.name}
+                selected={a.id === assetId}
+                onPress={() => {
+                  setAssetId(a.id);
+                  // Prefill from the asset at pick time; stays user-editable after.
+                  setCurrency(a.currency);
+                }}
+              />
+            ))}
+          </ScrollView>
           {!assetId ? (
             <>
               <Text variant="muted">Class</Text>

@@ -67,7 +67,12 @@ export async function insertValuationMark(db: Db, values: NewValuationMark): Pro
   return id;
 }
 
-/** Correct a transaction amount — audited (spec §7: "a corrected transaction"). */
+/**
+ * Correct a transaction amount — audited (spec §7: "a corrected transaction").
+ * The stored fingerprint is deliberately left untouched: it identifies the
+ * source row as originally imported, so re-imports of the same statement still
+ * dedup against the corrected row instead of re-entering the review queue.
+ */
 export async function updateTransactionAmount(
   db: Db,
   id: string,
@@ -77,21 +82,7 @@ export async function updateTransactionAmount(
   const rows = await db.select().from(transactions).where(eq(transactions.id, id));
   const existing = rows[0];
   if (!existing) throw new Error(`Transaction ${id} not found`);
-  await db
-    .update(transactions)
-    .set({
-      amountMinor,
-      fingerprint: fingerprint({
-        assetId: existing.assetId,
-        date: existing.date,
-        type: existing.type,
-        quantity: existing.quantity,
-        amountMinor,
-        sourceAccount: existing.sourceAccount,
-        sourceTxnId: existing.sourceTxnId,
-      }),
-    })
-    .where(eq(transactions.id, id));
+  await db.update(transactions).set({ amountMinor }).where(eq(transactions.id, id));
   await logChange(db, {
     entity: 'transactions',
     entityId: id,

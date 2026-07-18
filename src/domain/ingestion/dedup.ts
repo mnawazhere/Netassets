@@ -71,11 +71,25 @@ export function planRow(
     };
   }
 
-  // A row with its own broker id and no fingerprint collision is
-  // authoritatively a NEW trade (two same-day fills, distinct ids) — the
-  // content checks below are only for id-less rows, where identical
-  // content may be the same trade keyed differently on a prior import.
-  if (strong) return { action: 'insert', fingerprint: fp };
+  // A row with its own broker id and no fingerprint collision is a new
+  // trade RELATIVE TO other id-keyed rows (two same-day fills, distinct
+  // ids never collide) — but a prior import may have stored the SAME
+  // trade id-less (voice/screenshot capture, weak fingerprint), so
+  // strong rows still content-check against weak-keyed existing rows.
+  // An existing row is weak-keyed iff its stored fingerprint equals the
+  // no-id fingerprint of its own content.
+  const isWeakKeyed = (t: ExistingTxn) =>
+    t.fingerprint ===
+    fingerprint({
+      assetId: t.assetId,
+      date: t.date,
+      type: t.type,
+      quantity: t.quantity,
+      amountMinor: t.amountMinor,
+      sourceAccount: t.sourceAccount,
+      sourceTxnId: null,
+    });
+  const candidates = strong ? ctx.existing.filter(isWeakKeyed) : ctx.existing;
 
   const sameShape = (t: ExistingTxn) =>
     t.assetId === row.assetId &&
@@ -84,7 +98,7 @@ export function planRow(
     (t.quantity ?? null) === (row.quantity ?? null) &&
     (t.sourceAccount ?? null) === (row.sourceAccount ?? null);
 
-  const exactContent = ctx.existing.find((t) => sameShape(t) && t.amountMinor === row.amountMinor);
+  const exactContent = candidates.find((t) => sameShape(t) && t.amountMinor === row.amountMinor);
   if (exactContent) {
     if (inCoveredRange(row, ctx.coveredRanges)) {
       return { action: 'skip-exact', reason: 'covered-weak-match', fingerprint: fp };
@@ -97,7 +111,7 @@ export function planRow(
     };
   }
 
-  const near = ctx.existing.find((t) => sameShape(t) && isNearAmount(t.amountMinor, row.amountMinor));
+  const near = candidates.find((t) => sameShape(t) && isNearAmount(t.amountMinor, row.amountMinor));
   if (near) {
     return { action: 'review', reason: 'near-match', conflictsWith: near.id, fingerprint: fp };
   }

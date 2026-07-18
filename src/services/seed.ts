@@ -10,7 +10,9 @@
  *   rows (so fees never double-count between cost basis and money costs).
  * - Imported rows carry the broker's transaction ID (source_txn_id).
  */
-import { fxRates, imports, priceCache } from '@/db/schema';
+import { sql } from 'drizzle-orm';
+
+import { fxRates, imports, priceCache, settings } from '@/db/schema';
 import type { Db } from '@/db/client';
 import { toMinor } from '@/domain/money';
 import { nowISO, uuid } from '@/lib/uuid';
@@ -18,22 +20,65 @@ import { createAsset, listAssets } from '@/repositories/assets';
 import { SETTING_KEYS, setSetting } from '@/repositories/settings';
 import { insertTransaction, insertValuationMark } from '@/repositories/transactions';
 
-export async function seedIfEmpty(db: Db): Promise<void> {
+/** Settings key claimed atomically (settings_key_uq) by the run that seeds.
+ *  Committed in the SAME transaction as the demo rows, so it also means the
+ *  portfolio is complete — and a user who deletes every demo asset is never
+ *  re-seeded on the next launch. */
+const SEED_CLAIM_KEY = 'demo_seeded';
+
+/** One in-flight seed per db handle: a StrictMode double-invoke or provider
+ *  remount while the first (async) run is still mid-flight must join it, not
+ *  race it — two interleaved runs would each see an empty assets table. */
+const inFlight = new WeakMap<Db, Promise<void>>();
+
+export function seedIfEmpty(db: Db): Promise<void> {
+  const running = inFlight.get(db);
+  if (running) return running;
+  const run = seedOnce(db).finally(() => {
+    inFlight.delete(db);
+  });
+  inFlight.set(db, run);
+  return run;
+}
+
+async function seedOnce(db: Db): Promise<void> {
   const existing = await listAssets(db);
   if (existing.length > 0) return;
 
   const now = nowISO();
+  // fx_rates is a DATE-keyed series (fx service convention: date-only asOf,
+  // deduped by fx_rates_pair_asof_uq). Seeding a full datetime here would let
+  // the post-seed live refresh add a SECOND point for the same day.
+  const today = now.slice(0, 10);
 
-  // --- Settings: AED base, AED 300/hr baseline (spec §5 worked example) ---
-  await setSetting(db, SETTING_KEYS.baseCurrency, 'AED', 'system');
-  await setSetting(db, SETTING_KEYS.hourlyRateCurrency, 'AED', 'system');
-  await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(toMinor('300', 'AED')), 'system');
+  // The expo-sqlite drizzle driver's transaction() callback is synchronous,
+  // so it cannot span the async repository helpers below — open the
+  // transaction manually instead. Either the whole demo portfolio commits
+  // (claim row included) or none of it does; a mid-seed crash can never
+  // strand a half-built portfolio that the guard above would skip forever.
+  await db.run(sql`begin`);
+  try {
+    // Atomic claim: if a previous launch already seeded, the insert is a
+    // no-op (settings_key_uq) and we bail without touching anything.
+    const claim = await db
+      .insert(settings)
+      .values({ id: uuid(), key: SEED_CLAIM_KEY, value: now, updatedAt: now })
+      .onConflictDoNothing();
+    if (claim.changes === 0) {
+      await db.run(sql`rollback`);
+      return;
+    }
 
-  // --- Cached FX (Stage 4 replaces with a live provider) ---
-  await db.insert(fxRates).values([
-    { id: uuid(), base: 'USD', quote: 'AED', rate: 3.6725, asOf: now },
-    { id: uuid(), base: 'JPY', quote: 'AED', rate: 0.0239, asOf: now },
-  ]);
+    // --- Settings: AED base, AED 300/hr baseline (spec §5 worked example) ---
+    await setSetting(db, SETTING_KEYS.baseCurrency, 'AED', 'system');
+    await setSetting(db, SETTING_KEYS.hourlyRateCurrency, 'AED', 'system');
+    await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(toMinor('300', 'AED')), 'system');
+
+    // --- Cached FX (Stage 4 replaces with a live provider) ---
+    await db.insert(fxRates).values([
+      { id: uuid(), base: 'USD', quote: 'AED', rate: 3.6725, asOf: today },
+      { id: uuid(), base: 'JPY', quote: 'AED', rate: 0.0239, asOf: today },
+    ]);
 
   // --- 1. Equity: AAPL on eToro (USD), two buys, one dividend, imported ---
   const importId = uuid();
@@ -272,4 +317,10 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     source: 'manual',
     note: 'Sealed, market ask',
   });
+
+    await db.run(sql`commit`);
+  } catch (e) {
+    await db.run(sql`rollback`);
+    throw e;
+  }
 }

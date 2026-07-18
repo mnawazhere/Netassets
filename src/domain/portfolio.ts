@@ -20,7 +20,7 @@ export interface AssetSnapshot {
    * assets it's one slice labeled by asset.platform. Never derived from
    * asset.platform for market assets.
    */
-  locations: Array<{ label: string; amountMinor: number }>;
+  locations: { label: string; amountMinor: number }[];
 }
 
 export interface NetWorth {
@@ -28,9 +28,9 @@ export interface NetWorth {
   baseCurrency: string;
   byClass: Record<string, number>;
   byPlatform: Record<string, number>;
-  perAsset: Array<{ id: string; name: string; valueMinor: number; stale: boolean }>;
+  perAsset: { id: string; name: string; valueMinor: number; stale: boolean }[];
   /** Assets with no valuation — surfaced, never silently zeroed. */
-  unvalued: Array<{ id: string; name: string }>;
+  unvalued: { id: string; name: string }[];
 }
 
 /**

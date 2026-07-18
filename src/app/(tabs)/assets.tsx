@@ -1,6 +1,6 @@
-import { Link } from 'expo-router';
+import { Link, useFocusEffect } from 'expo-router';
 import * as React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
@@ -9,7 +9,22 @@ import { usePortfolio } from '@/hooks/data';
 import { money, percent } from '@/lib/format';
 
 export default function AssetsScreen() {
-  const { view, loading } = usePortfolio();
+  const { view, loading, reload, refresh } = usePortfolio();
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  // Tab screens stay mounted — reload on focus so captures/imports made on
+  // other tabs show up here without restarting the app.
+  useFocusEffect(
+    React.useCallback(() => {
+      void reload();
+    }, [reload])
+  );
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  }, [refresh]);
 
   if (loading || !view) {
     return (
@@ -28,7 +43,10 @@ export default function AssetsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-4 p-4">
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerClassName="gap-4 p-4"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
       {[...byClass.entries()].map(([cls, assets]) => (
         <Card key={cls}>
           <CardHeader>

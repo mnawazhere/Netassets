@@ -55,7 +55,10 @@ export async function refreshPrices(db: Db): Promise<{ updated: string[]; failed
   const failed: string[] = [];
 
   for (const asset of all) {
-    if (!isMarketPriced(asset.class) || !asset.symbol) continue;
+    // providerId=null means the binding gate never confirmed (or the user
+    // declined) — guessing a provider id here would silently price the
+    // wrong security, so unbound assets stay unpriced.
+    if (!isMarketPriced(asset.class) || !asset.symbol || !asset.providerId) continue;
     if (await refreshPriceFor(db, asset)) updated.push(asset.symbol);
     else failed.push(asset.symbol);
   }

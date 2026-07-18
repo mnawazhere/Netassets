@@ -14,7 +14,7 @@ export function normalizeAccount(raw: string | null | undefined): string | null 
 }
 
 /** Units currently held: Σ BUY quantities − Σ SELL quantities. */
-export function quantityHeld(txns: Array<CashTxn & { quantity?: number | null }>): number {
+export function quantityHeld(txns: (CashTxn & { quantity?: number | null })[]): number {
   let qty = 0;
   for (const t of txns) {
     if (t.type === 'BUY') qty += t.quantity ?? 0;
@@ -46,7 +46,7 @@ export interface AccountPosition {
  * into whichever imported first.
  */
 export function positionsByAccount(
-  txns: Array<CashTxn & { quantity?: number | null; sourceAccount?: string | null }>
+  txns: (CashTxn & { quantity?: number | null; sourceAccount?: string | null })[]
 ): AccountPosition[] {
   const map = new Map<string | null, AccountPosition>();
   for (const t of txns) {

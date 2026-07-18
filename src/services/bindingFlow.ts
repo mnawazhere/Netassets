@@ -25,6 +25,13 @@ import { getSetting } from '@/repositories/settings';
 import { anthropicProposer, type Proposer } from './ai/proposer';
 import { fetchCryptoPrice, fetchEquityPrice } from './providers';
 
+// ---------- manual-entry preparation (one decision point for the UI) ----------
+
+import type { ParsedTransaction } from '@/domain/ingestion/types';
+import { resolveBinding } from '@/domain/symbols/resolver';
+import { loadCacheLookup } from '@/repositories/symbolMappings';
+import { makeCacheLookup } from './resolution';
+
 export type TestFetch = (binding: Binding) => Promise<number | null>;
 
 /** Live gate 1: does the providerId actually resolve to a price? */
@@ -95,13 +102,6 @@ export function confirmCandidate(
 ): GateState {
   return applyConfirmation(gate, accepted);
 }
-
-// ---------- manual-entry preparation (one decision point for the UI) ----------
-
-import type { ParsedTransaction } from '@/domain/ingestion/types';
-import { resolveBinding } from '@/domain/symbols/resolver';
-import { loadCacheLookup } from '@/repositories/symbolMappings';
-import { makeCacheLookup } from './resolution';
 
 type AssetHint = ParsedTransaction['asset'];
 const MARKET = new Set(['EQUITY', 'CRYPTO', 'ETF']);

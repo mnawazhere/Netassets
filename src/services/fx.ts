@@ -40,10 +40,33 @@ export async function refreshLatestRates(db: Db, baseCurrency: string): Promise<
   }
 }
 
+/** exchange-api's dated endpoints only reach back this far (per its docs);
+ *  anything older 404s on every host, forever — never worth a fetch. */
+const FX_HISTORY_FLOOR = '2024-03-02';
+
+/** Session negative cache: `${base}:${quote}:${date}` keys the provider has
+ *  confirmed it lacks, so every later refresh stops paying two 10s fetch
+ *  timeouts per permanently-missing date. */
+const knownMissing = new Set<string>();
+
+const BACKFILL_CONCURRENCY = 4;
+
+/** A run of failures this long means the network is down, not that dates
+ *  are missing — abort the pass instead of stacking timeouts. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
+/** Test hook: the negative cache is module state. */
+export function resetFxMissCache(): void {
+  knownMissing.clear();
+}
+
 /**
  * Backfill historical rates for every transaction date of foreign-currency
  * assets, so per-date conversion (spec §8) has a real rate at each flow.
- * Skips dates already cached; a failed fetch just leaves a gap that
+ * Skips dates already cached, dates before the provider's history floor,
+ * and dates the provider has confirmed missing; fetches run a few at a
+ * time and the pass aborts after a run of failures so an offline refresh
+ * can't stall pull-to-refresh. A skipped date just leaves a gap that
  * rateOn() carries forward over.
  */
 export async function backfillHistoricalRates(db: Db, baseCurrency: string): Promise<void> {
@@ -60,12 +83,33 @@ export async function backfillHistoricalRates(db: Db, baseCurrency: string): Pro
     wanted.get(c)!.add(r.date);
   }
 
+  // A miss only becomes "permanently missing" once a later success proves
+  // the network was up; misses before an abort get retried next pass.
+  let pendingMisses: string[] = [];
+  let consecutiveFailures = 0;
+
   for (const [currency, dates] of wanted) {
     const have = new Set((await getRateSeries(db, currency, base)).points.map((p) => p.date));
-    for (const date of dates) {
-      if (have.has(date)) continue;
-      const r = await fetchFxRate(currency, base, date);
-      if (r) await storeRate(db, currency, base, r.date, r.rate);
+    const todo = [...dates].filter(
+      (d) => !have.has(d) && d >= FX_HISTORY_FLOOR && !knownMissing.has(`${currency}:${base}:${d}`)
+    );
+    for (let i = 0; i < todo.length; i += BACKFILL_CONCURRENCY) {
+      const chunk = todo.slice(i, i + BACKFILL_CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async (date) => ({ date, r: await fetchFxRate(currency, base, date) }))
+      );
+      for (const { date, r } of results) {
+        if (r) {
+          await storeRate(db, currency, base, r.date, r.rate);
+          for (const key of pendingMisses) knownMissing.add(key);
+          pendingMisses = [];
+          consecutiveFailures = 0;
+        } else {
+          pendingMisses.push(`${currency}:${base}:${date}`);
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return;
+        }
+      }
     }
   }
 }

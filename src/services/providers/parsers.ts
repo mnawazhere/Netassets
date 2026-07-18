@@ -56,7 +56,7 @@ export function parseYahooChart(
   json: unknown
 ): { priceMinor: number; currency: string; asOf: string } | null {
   const meta = (
-    json as { chart?: { result?: Array<{ meta?: Record<string, unknown> }> } } | null
+    json as { chart?: { result?: { meta?: Record<string, unknown> }[] } } | null
   )?.chart?.result?.[0]?.meta;
   const price = meta?.regularMarketPrice;
   const currency = typeof meta?.currency === 'string' ? meta.currency : 'USD';

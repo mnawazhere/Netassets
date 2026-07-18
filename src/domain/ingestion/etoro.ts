@@ -6,10 +6,13 @@
  *   Date,Type,Details,Amount,Units,Realized Equity Change,Realized Equity,
  *   Balance,Position ID,Asset type,NWA
  * - Date is DD/MM/YYYY HH:MM:SS
- * - Details is "SYMBOL/CCY" (e.g. AAPL/USD)
- * - Position ID is the broker id → strong dedup key (source_txn_id)
- * - Amount is in the account currency, positive in the export even for
- *   opens; sign is derived from Type.
+ * - Details is "SYMBOL/CCY" (e.g. AAPL/USD) — the CCY is the instrument's
+ *   quote currency, an asset hint only, NOT the currency of Amount
+ * - Position ID is the broker id of the POSITION (not the row) → strong
+ *   dedup key (source_txn_id) only when made row-unique: dividends,
+ *   overnight fees and partial closes all recur under one Position ID
+ * - Amount is in the account currency (default USD), positive in the
+ *   export even for opens; sign is derived from Type.
  */
 import { toMinor } from '../money';
 import type { ParsedTransaction } from './types';
@@ -44,7 +47,12 @@ export interface EtoroParseResult {
   periodEnd: string | null;
 }
 
-export function parseEtoroCsv(csv: string, sourceAccount = 'etoro'): EtoroParseResult {
+export function parseEtoroCsv(
+  csv: string,
+  sourceAccount = 'etoro',
+  accountCurrency = 'USD'
+): EtoroParseResult {
+  const txnCurrency = accountCurrency.toUpperCase();
   const lines = csv.trim().split(/\r?\n/);
   const result: EtoroParseResult = {
     transactions: [],
@@ -96,8 +104,17 @@ export function parseEtoroCsv(csv: string, sourceAccount = 'etoro'): EtoroParseR
       continue;
     }
 
-    const currency = (ccy || 'USD').toUpperCase();
-    const magnitude = Math.abs(toMinor(amountRaw, currency));
+    // Amount is in the account currency (see header) — the Details pair's
+    // CCY is only a hint for the asset's own currency.
+    const assetCurrency = (ccy || txnCurrency).toUpperCase();
+    let magnitude: number;
+    try {
+      magnitude = Math.abs(toMinor(amountRaw, txnCurrency));
+    } catch {
+      // e.g. sub-cent precision — surface the row, never abort the statement.
+      result.unparsed.push(line);
+      continue;
+    }
     const sign = mapped === 'BUY' || mapped === 'FEE' ? -1 : 1;
 
     result.transactions.push({
@@ -106,16 +123,24 @@ export function parseEtoroCsv(csv: string, sourceAccount = 'etoro'): EtoroParseR
         name: symbol.toUpperCase(),
         class: ASSET_CLASS_MAP[assetType] ?? 'EQUITY',
         platform: 'eToro',
-        currency,
+        currency: assetCurrency,
       },
       type: mapped,
       date,
       amountMinor: sign * magnitude,
-      currency,
+      currency: txnCurrency,
       quantity: mapped === 'BUY' || mapped === 'SELL' ? (Number.isFinite(units) ? units : null) : null,
       hoursSpent: mapped === 'BUY' ? 0.1 : 0, // class default (spec §4)
       sourceAccount,
-      sourceTxnId: posId ? `${posId}:${rawType}` : null,
+      // Position ID identifies the position, not the row: dividends,
+      // overnight fees and partial closes recur under the same id+type, so
+      // only the (unique) opening row may use it alone — recurring rows get
+      // date+amount appended to stay row-unique across the statement.
+      sourceTxnId: posId
+        ? rawType === 'open position'
+          ? `${posId}:${rawType}`
+          : `${posId}:${rawType}:${date}:${sign * magnitude}`
+        : null,
     });
 
     if (!result.periodStart || date < result.periodStart) result.periodStart = date;

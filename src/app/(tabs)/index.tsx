@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 
 import { AllocationBars } from '@/components/allocation';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -13,8 +13,13 @@ export default function DashboardScreen() {
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await refresh();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } catch (e) {
+      Alert.alert('Refresh failed', String(e instanceof Error ? e.message : e));
+    } finally {
+      setRefreshing(false);
+    }
   }, [refresh]);
 
   if (loading || !view) {
@@ -42,7 +47,7 @@ export default function DashboardScreen() {
       {view.anyStale ? (
         <View className="rounded-lg border border-border bg-secondary px-3 py-2">
           <Text className="text-sm text-muted-foreground">
-            ⚠ Prices couldn't refresh — showing last known
+            ⚠ Prices couldn&apos;t refresh — showing last known
             {view.oldestAsOf ? ` (as of ${view.oldestAsOf.slice(0, 10)})` : ''}. Pull to retry.
           </Text>
         </View>

@@ -100,7 +100,7 @@ export async function runImport(
     providerId: a.providerId,
   }));
   let assetsCreated = 0;
-  const resolved: Array<ParsedTransaction & { assetId: string }> = [];
+  const resolved: (ParsedTransaction & { assetId: string })[] = [];
   for (const row of req.rows) {
     const { hint, dominantCandidate } = bindHint(row.asset, bindingCache);
     const resolution = resolveAsset(known, hint);
