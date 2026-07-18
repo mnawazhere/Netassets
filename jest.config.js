@@ -8,5 +8,7 @@ module.exports = {
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    // Native Keychain module — in-memory stand-in under Node.
+    '^expo-secure-store$': '<rootDir>/src/testing/expo-secure-store.mock.ts',
   },
 };

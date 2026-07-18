@@ -285,6 +285,20 @@ stale silently, and the same name imports as a second asset. Layered:
    unpriced**, flagged exactly like a collectible so the user knows it won't
    auto-track. Never blocked, never silently mis-tracking.
 
+**Trust is by match-strength, NOT by source.** `resolveBinding` returns the
+match kind (`exact` | `cached` | `dominant`), and the caller acts on it:
+- **`exact` (symbol/canonical name) or `cached` (previously confirmed)** →
+  auto-bind, trusted.
+- **`dominant` (unique fuzzy prefix match) → a hypothesis, not a fact** — it
+  goes through the SAME confirmation gate as an AI proposal. A unique prefix
+  match can still be wrong: "Micro" binds to Microsoft even if the user held
+  Micron and Micron isn't in the curated index. On manual entry the user's
+  selection is the confirmation; on the **no-human CSV-import path a dominant
+  match must route to the review queue**, never silently bind-and-price.
+So 7B-3's confirm step is "confirm any non-exact binding" (dominant OR AI),
+one surface for both — since the risk (right-symbol-wrong-entity, priced
+perfectly) is identical whether the guess came from the index or the model.
+
 Nice-to-have: on selection from the static index too, fire one test-fetch so
 the picker confirms "✓ will track" before the asset is committed.
 

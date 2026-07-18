@@ -89,36 +89,62 @@ export default function CaptureScreen() {
 
   const onSubmitManual = async () => {
     setBusy(true);
-    try {
-      const result = await submitManualTransaction({
-        assetId,
-        newAsset: assetId
-          ? null
-          : {
-              name: newAssetName.trim(),
-              class: newAssetClass,
-              symbol: binding?.symbol ?? null,
-              providerId: binding?.providerId ?? null,
-              platform: null,
-              currency: currency.toUpperCase(),
-            },
-        type,
-        date: date.trim(),
-        amount: amount.trim(),
-        currency,
-        quantity: quantity.trim() ? Number(quantity) : null,
-        hoursSpent: hoursSpent.trim() ? Number(hoursSpent) : 0,
-        sourceAccount: null,
-        note: null,
-      });
+    const entry = {
+      assetId,
+      newAsset: assetId
+        ? null
+        : {
+            name: newAssetName.trim(),
+            class: newAssetClass,
+            symbol: binding?.symbol ?? null,
+            providerId: binding?.providerId ?? null,
+            platform: null,
+            currency: currency.toUpperCase(),
+          },
+      type,
+      date: date.trim(),
+      amount: amount.trim(),
+      currency,
+      quantity: quantity.trim() ? Number(quantity) : null,
+      hoursSpent: hoursSpent.trim() ? Number(hoursSpent) : 0,
+      sourceAccount: null,
+      note: null,
+    };
+    const showResult = async (result: Awaited<ReturnType<typeof submitManualTransaction>>) => {
       if (result.ok) {
         Alert.alert('Saved', 'Transaction recorded (audited in change log).');
         setAmount('');
         setQuantity('');
         await reloadAssets();
+      } else if ('confirmBinding' in result) {
+        // Gate 2 (§6 v10): test-fetch passed, the entity still needs a human.
+        const p = result.confirmBinding;
+        const b = p.candidate.binding;
+        Alert.alert(
+          'Track this security?',
+          `Matched ${b.displayName} — ${b.symbol} · ` +
+            `${(p.fetchedPriceMinor / 100).toFixed(2)} ${b.currency}` +
+            (p.candidate.origin === 'ai' ? '\n(AI-suggested — verify it is the right entity)' : ''),
+          [
+            {
+              text: "Don't track (unpriced)",
+              style: 'cancel',
+              onPress: () =>
+                void submitManualTransaction(entry, { pending: p, accepted: false }).then(showResult),
+            },
+            {
+              text: 'Track',
+              onPress: () =>
+                void submitManualTransaction(entry, { pending: p, accepted: true }).then(showResult),
+            },
+          ]
+        );
       } else {
         Alert.alert('Not saved', result.reason);
       }
+    };
+    try {
+      await showResult(await submitManualTransaction(entry));
     } finally {
       setBusy(false);
     }
@@ -148,6 +174,33 @@ export default function CaptureScreen() {
           </CardHeader>
           <CardContent className="gap-3">
             {review.items.map((item) => {
+              if (item.reason === 'binding-confirm') {
+                const p = JSON.parse(item.payload) as {
+                  candidate: {
+                    binding: { displayName: string; symbol: string; currency: string; providerId: string };
+                    origin: string;
+                    forQuery: string;
+                  };
+                  fetchedPriceMinor: number;
+                };
+                const b = p.candidate.binding;
+                return (
+                  <View key={item.id} className="gap-2 border-b border-border pb-3">
+                    <Text className="text-sm">
+                      "{p.candidate.forQuery}" matched {b.displayName} — {b.symbol} ·{' '}
+                      {(p.fetchedPriceMinor / 100).toFixed(2)} {b.currency}
+                    </Text>
+                    <Text variant="muted" className="text-xs">
+                      Fuzzy match from an import — confirm it's the right security before it
+                      auto-prices. Until then it's tracked unpriced.
+                    </Text>
+                    <View className="flex-row gap-2">
+                      <Button label="Track" size="sm" onPress={() => review.resolve(item.id, 'kept')} />
+                      <Button label="Don't track" size="sm" variant="outline" onPress={() => review.resolve(item.id, 'discarded')} />
+                    </View>
+                  </View>
+                );
+              }
               const p = JSON.parse(item.payload) as {
                 type: string;
                 date: string;

@@ -18,10 +18,11 @@ import type { CoveredRange, ExistingTxn, ParsedTransaction } from '@/domain/inge
 import type { Binding } from '@/domain/symbols/resolver';
 import { nowISO, uuid } from '@/lib/uuid';
 import { createAsset, listAssets } from '@/repositories/assets';
-import { enqueueReview } from '@/repositories/reviewQueue';
+import { enqueueBindingReview, enqueueReview } from '@/repositories/reviewQueue';
 import { loadCacheLookup, saveMapping } from '@/repositories/symbolMappings';
 import { insertTransaction } from '@/repositories/transactions';
 
+import { liveTestFetch, verifyCandidate, type TestFetch } from './bindingFlow';
 import { bindHint } from './resolution';
 
 export interface ImportRequest {
@@ -43,7 +44,16 @@ export interface ImportSummary {
   coverage: CoverageReport;
 }
 
-export async function runImport(db: Db, req: ImportRequest): Promise<ImportSummary> {
+export interface ImportDeps {
+  /** Gate 1 for dominant binding hypotheses found during import. */
+  testFetch: TestFetch;
+}
+
+export async function runImport(
+  db: Db,
+  req: ImportRequest,
+  deps: ImportDeps = { testFetch: liveTestFetch }
+): Promise<ImportSummary> {
   // Coverage context from prior processed statements.
   const prior = await db.select().from(imports).where(eq(imports.status, 'processed'));
   const coveredRanges: CoveredRange[] = prior
@@ -88,12 +98,15 @@ export async function runImport(db: Db, req: ImportRequest): Promise<ImportSumma
   let assetsCreated = 0;
   const resolved: Array<ParsedTransaction & { assetId: string }> = [];
   for (const row of req.rows) {
-    const hint = bindHint(row.asset, bindingCache);
+    const { hint, dominantCandidate } = bindHint(row.asset, bindingCache);
     const resolution = resolveAsset(known, hint);
     let assetId: string;
     if (resolution.kind === 'existing') {
       assetId = resolution.assetId;
     } else {
+      // Dominant hypothesis on the no-human import path (§6 v10): the
+      // asset is created UNPRICED and the candidate goes through gate 1
+      // (test-fetch) into the review queue — never silently bind-and-price.
       assetId = await createAsset(db, resolution.asset);
       known.push({ id: assetId, ...resolution.asset });
       assetsCreated++;
@@ -110,6 +123,21 @@ export async function runImport(db: Db, req: ImportRequest): Promise<ImportSumma
           'index',
           row.asset.symbol ?? row.asset.name ?? undefined
         );
+      } else if (dominantCandidate) {
+        const gate = await verifyCandidate(dominantCandidate, {
+          testFetch: deps.testFetch,
+          proposer: async () => null, // dominant path: no AI involved
+          aiEnabled: async () => false,
+        });
+        if (gate.outcome === 'awaiting-confirmation') {
+          await enqueueBindingReview(db, {
+            importId,
+            assetId,
+            candidate: dominantCandidate,
+            fetchedPriceMinor: gate.gate.fetchedPriceMinor,
+          });
+        }
+        // test-fetch fail → asset simply stays unpriced (manual-unpriced).
       }
     }
     resolved.push({ ...row, assetId });

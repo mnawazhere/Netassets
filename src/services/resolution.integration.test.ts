@@ -12,8 +12,11 @@ import { join } from 'path';
 
 import type { Db } from '@/db/client';
 import * as schema from '@/db/schema';
+import { confirmCandidate, verifyCandidate } from './bindingFlow';
 import { runImport } from './ingestion';
 import { ensureAsset } from './resolution';
+
+const passFetch = { proposer: async () => null, testFetch: async () => 41200, aiEnabled: async () => false };
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 
@@ -54,8 +57,9 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
   });
 
   it('hand-added free-text "Microsoft" then CSV "MSFT" → ONE asset, providerId msft.us', async () => {
-    // Manual entry: user typed a name, no typeahead pick, no providerId.
-    const manual = await ensureAsset(db, {
+    // Manual entry: user typed a name — a dominant HYPOTHESIS (§6 v10), so
+    // it must pass the gate (test-fetch + confirm) before anything binds.
+    const first = await ensureAsset(db, {
       name: 'Microsoft',
       symbol: null,
       class: 'EQUITY',
@@ -63,6 +67,20 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
       currency: 'USD',
       providerId: null,
     });
+    if (first.outcome !== 'needs-confirmation') throw new Error('expected confirmation gate');
+    const verified = await verifyCandidate(first.candidate, passFetch);
+    if (verified.outcome !== 'awaiting-confirmation') throw new Error('expected verified');
+    expect(confirmCandidate(verified.gate, true).state).toBe('bound');
+    const b = first.candidate.binding;
+    const manual = await ensureAsset(db, {
+      name: b.displayName,
+      symbol: b.symbol,
+      class: 'EQUITY',
+      platform: null,
+      currency: b.currency,
+      providerId: b.providerId,
+    });
+    if (manual.outcome !== 'resolved') throw new Error('expected resolved');
     expect(manual.created).toBe(true);
     expect(manual.bound).toBe(true);
 
@@ -104,19 +122,20 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
       currency: 'USD',
       providerId: null,
     });
+    // The hypothesized security is ALREADY tracked — that earlier bind was
+    // the confirmation, so no gate: it resolves straight to the one asset.
+    if (manual.outcome !== 'resolved') throw new Error('expected resolved');
     expect(manual.created).toBe(false);
     expect((await db.select().from(schema.assets))).toHaveLength(1);
   });
 
   it('cache keys normalize through norm(): casing/whitespace variants hit one binding', async () => {
-    await ensureAsset(db, {
-      name: 'Microsoft',
-      symbol: null,
-      class: 'EQUITY',
-      platform: null,
-      currency: 'USD',
-      providerId: null,
-    });
+    // Bind once through the gate (as the UI would after user confirm).
+    await ensureAsset(
+      db,
+      { name: 'Microsoft', symbol: 'MSFT', class: 'EQUITY', platform: null, currency: 'USD', providerId: null },
+      { allowUnpricedMarket: true }
+    );
     for (const variant of ['  MICROSOFT  ', 'mSfT', 'Microsoft Corporation']) {
       const again = await ensureAsset(db, {
         name: variant,
@@ -126,12 +145,12 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
         currency: 'USD',
         providerId: null,
       });
+      if (again.outcome !== 'resolved') throw new Error('expected resolved for ' + variant);
       expect(again.created).toBe(false);
     }
     expect((await db.select().from(schema.assets))).toHaveLength(1);
-    // The cache learned the original free text alongside the canonical keys.
+    // The cache learned the canonical keys from the bind.
     const keys = (await db.select().from(schema.symbolMappings)).map((m) => m.key).sort();
-    expect(keys).toContain('MICROSOFT');
     expect(keys).toContain('MSFT');
     expect(keys).toContain('MICROSOFT CORPORATION');
   });
@@ -145,6 +164,7 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
       currency: 'USD',
       providerId: null,
     });
+    if (r.outcome !== 'resolved') throw new Error('expected resolved');
     expect(r.created).toBe(true);
     expect(r.bound).toBe(false);
     const [asset] = await db.select().from(schema.assets);

@@ -23,6 +23,21 @@ export interface Binding {
   currency: string;
 }
 
+/**
+ * Trust is by MATCH-STRENGTH, not source (spec §6 v10):
+ * - 'exact'    — symbol/canonical-name index hit: a fact, auto-bind.
+ * - 'cached'   — previously confirmed mapping: a fact, auto-bind.
+ * - 'dominant' — unique fuzzy prefix match: a HYPOTHESIS. Same
+ *   confirmation gate as an AI proposal ("Micro" binds Microsoft even if
+ *   the user held Micron and Micron isn't in the curated index).
+ */
+export type MatchKind = 'exact' | 'cached' | 'dominant';
+
+export interface ResolvedBinding {
+  binding: Binding;
+  match: MatchKind;
+}
+
 /** Lookup into the persisted cache; keys arrive already normalized. */
 export type CacheLookup = (key: string, cls: SecurityEntry['class']) => Binding | null;
 
@@ -47,24 +62,25 @@ export function resolveBinding(
   key: string,
   cls: SecurityEntry['class'],
   cache: CacheLookup = () => null
-): Binding | null {
+): ResolvedBinding | null {
   const q = normalizeKey(key);
   if (!q) return null;
 
   const exact = lookupExact(q, cls);
-  if (exact) return toBinding(exact);
+  if (exact) return { binding: toBinding(exact), match: 'exact' };
 
   const cached = cache(q, cls);
-  if (cached) return cached;
+  if (cached) return { binding: cached, match: 'cached' };
 
   // Unique dominant index match: exactly one candidate at word/prefix
   // strength ("Microsoft" → Microsoft Corporation). Ambiguity = miss.
+  // NOTE: 'dominant' is a hypothesis — callers must gate it (§6 v10).
   const candidates = searchSymbols(q, { class: cls, limit: DOMINANT_SCORE_RESULTS });
   if (candidates.length === 1) {
     const only = candidates[0];
     const name = only.displayName.toUpperCase();
     if (name.startsWith(q) || name.split(/\s+/).some((w) => w.startsWith(q))) {
-      return toBinding(only);
+      return { binding: toBinding(only), match: 'dominant' };
     }
   }
 

@@ -14,7 +14,10 @@ import { toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
 import { changesFor } from '@/repositories/changeLog';
 import { listAssets, valuationMarksFor } from '@/repositories/assets';
+import { SETTING_KEYS_AI } from '@/services/aiSettings';
+import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
 import { ensureAsset } from '@/services/resolution';
+import { getAnthropicKey, setAnthropicKey } from '@/services/secureKeys';
 import { pendingReviews, resolveReview } from '@/repositories/reviewQueue';
 import { SETTING_KEYS, getSetting, setSetting } from '@/repositories/settings';
 import { insertTransaction } from '@/repositories/transactions';
@@ -138,23 +141,58 @@ export interface ManualEntry {
 
 const NEGATIVE_TYPES = new Set<TransactionType>(['BUY', 'FEE', 'MAINTENANCE']);
 
+export type ManualResult =
+  | { ok: true }
+  | { ok: false; reason: string }
+  | { ok: false; confirmBinding: PendingConfirmation };
+
+/**
+ * `bindingDecision` carries the answer from a prior confirmation card:
+ * 'accepted' binds the candidate; 'declined' creates unpriced.
+ */
 export async function submitManualTransaction(
-  entry: ManualEntry
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+  entry: ManualEntry,
+  bindingDecision?: { pending: PendingConfirmation; accepted: boolean }
+): Promise<ManualResult> {
   try {
     let assetId = entry.assetId;
     if (!assetId) {
       if (!entry.newAsset) return { ok: false, reason: 'Pick an asset or create one' };
-      // Same shared resolver path as CSV import (7B-2): a hand-added name
-      // and an imported ticker can only land on one asset, one providerId.
-      const ensured = await ensureAsset(db, {
+      let hint: Parameters<typeof ensureAsset>[1] = {
         name: entry.newAsset.name,
         symbol: entry.newAsset.symbol,
         class: entry.newAsset.class,
         platform: entry.newAsset.platform,
         currency: entry.newAsset.currency,
         providerId: entry.newAsset.providerId,
+      };
+      let mappingSource: 'index' | 'ai' = 'index';
+      let onDominant: 'confirm' | 'unpriced' = 'confirm';
+
+      if (bindingDecision?.accepted) {
+        // Gate 2 passed — enrich the hint with the confirmed binding.
+        const b = bindingDecision.pending.candidate.binding;
+        hint = { ...hint, name: b.displayName, symbol: b.symbol, providerId: b.providerId, currency: b.currency };
+        mappingSource = bindingDecision.pending.candidate.origin === 'ai' ? 'ai' : 'index';
+      } else if (bindingDecision) {
+        onDominant = 'unpriced'; // user said no — track unpriced
+      } else {
+        // First pass: run the gate decision point (§6 v10).
+        const prep = await prepareManualBinding(db, hint);
+        if (prep.kind === 'confirm') return { ok: false, confirmBinding: prep.pending };
+        hint = prep.hint;
+        if (prep.kind === 'unpriced') onDominant = 'unpriced';
+      }
+
+      const ensured = await ensureAsset(db, hint, {
+        onDominant,
+        mappingSource,
+        allowUnpricedMarket: true,
       });
+      if (ensured.outcome === 'needs-confirmation') {
+        // Belt-and-braces — prepareManualBinding already surfaced this.
+        return { ok: false, reason: 'Binding needs confirmation' };
+      }
       assetId = ensured.assetId;
     }
     const magnitude = Math.abs(toMinor(entry.amount, entry.currency));
@@ -292,4 +330,39 @@ export function useSettingsData() {
     saveBaseCurrency,
     saveTimeDefault,
   };
+}
+
+// ---------- AI settings (toggle = audited setting; KEY = Keychain ONLY) ----------
+
+export function useAiSettings() {
+  const [enabled, setEnabled] = React.useState(false);
+  const [hasKey, setHasKey] = React.useState(false);
+
+  const reload = React.useCallback(async () => {
+    setEnabled((await getSetting(db, SETTING_KEYS_AI.aiFallbackEnabled)) === 'true');
+    setHasKey((await getAnthropicKey()) !== null);
+  }, []);
+
+  React.useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const setAiEnabled = React.useCallback(
+    async (on: boolean) => {
+      await setSetting(db, SETTING_KEYS_AI.aiFallbackEnabled, on ? 'true' : 'false', 'manual');
+      await reload();
+    },
+    [reload]
+  );
+
+  const saveKey = React.useCallback(
+    async (key: string) => {
+      // expo-secure-store only — never the settings table, never change_log.
+      await setAnthropicKey(key);
+      await reload();
+    },
+    [reload]
+  );
+
+  return { enabled, hasKey, setAiEnabled, saveKey };
 }

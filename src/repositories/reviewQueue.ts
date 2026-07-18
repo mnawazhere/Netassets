@@ -3,9 +3,19 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { reviewItems } from '@/db/schema';
 import type { ParsedTransaction } from '@/domain/ingestion/types';
+import type { BindingCandidate } from '@/domain/symbols/bindingGate';
 import { nowISO, uuid } from '@/lib/uuid';
+import { applyConfirmedBinding } from '@/services/resolution';
 
 import { insertTransaction, updateTransactionAmount } from './transactions';
+
+/** Payload shape for reason='binding-confirm' items (spec §6 v10). */
+export interface BindingReviewPayload {
+  kind: 'binding-confirm';
+  candidate: BindingCandidate;
+  /** Price from the passed test-fetch — shown on the confirm card. */
+  fetchedPriceMinor: number;
+}
 
 export async function enqueueReview(
   db: Db,
@@ -25,6 +35,38 @@ export async function enqueueReview(
     payload: JSON.stringify(entry.payload),
     reason: entry.reason,
     conflictsWith: entry.conflictsWith,
+    createdAt: nowISO(),
+  });
+  return id;
+}
+
+/**
+ * Queue a VERIFIED (test-fetch passed) but unconfirmed binding hypothesis
+ * for the asset — the no-human import path's confirmation gate. The asset
+ * stays unpriced until the user answers.
+ */
+export async function enqueueBindingReview(
+  db: Db,
+  entry: {
+    importId: string;
+    assetId: string;
+    candidate: BindingCandidate;
+    fetchedPriceMinor: number;
+  }
+): Promise<string> {
+  const id = uuid();
+  const payload: BindingReviewPayload = {
+    kind: 'binding-confirm',
+    candidate: entry.candidate,
+    fetchedPriceMinor: entry.fetchedPriceMinor,
+  };
+  await db.insert(reviewItems).values({
+    id,
+    importId: entry.importId,
+    assetId: entry.assetId,
+    payload: JSON.stringify(payload),
+    reason: 'binding-confirm',
+    conflictsWith: null,
     createdAt: nowISO(),
   });
   return id;
@@ -51,6 +93,21 @@ export async function resolveReview(
   const item = rows[0];
   if (!item) throw new Error(`Review item ${id} not found`);
   if (item.status !== 'pending') throw new Error(`Review item ${id} already ${item.status}`);
+
+  // Binding confirmations: kept = user confirmed the entity → bind + cache;
+  // discarded = asset stays unpriced. Merge does not apply.
+  if (item.reason === 'binding-confirm') {
+    if (decision === 'merged') throw new Error('merge does not apply to a binding confirmation');
+    if (decision === 'kept') {
+      const payload = JSON.parse(item.payload) as BindingReviewPayload;
+      await applyConfirmedBinding(db, item.assetId, payload.candidate);
+    }
+    await db
+      .update(reviewItems)
+      .set({ status: decision, resolvedAt: nowISO() })
+      .where(eq(reviewItems.id, id));
+    return;
+  }
 
   const payload = JSON.parse(item.payload) as ParsedTransaction;
 

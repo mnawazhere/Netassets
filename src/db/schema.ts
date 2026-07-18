@@ -208,7 +208,9 @@ export const reviewItems = sqliteTable(
       .references(() => assets.id),
     /** JSON of the incoming ParsedTransaction awaiting a decision. */
     payload: text('payload').notNull(),
-    reason: text('reason', { enum: ['weak-collision', 'near-match'] }).notNull(),
+    reason: text('reason', {
+      enum: ['weak-collision', 'near-match', 'binding-confirm'],
+    }).notNull(),
     /** transactions.id of the existing row it collided/near-matched with. */
     conflictsWith: text('conflicts_with'),
     status: text('status', { enum: ['pending', 'kept', 'merged', 'discarded'] })

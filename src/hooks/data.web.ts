@@ -72,10 +72,34 @@ export interface ManualEntry {
   note: string | null;
 }
 
+export interface PendingConfirmation {
+  candidate: {
+    binding: { displayName: string; symbol: string; providerId: string; currency: string };
+    origin: 'index-dominant' | 'ai';
+    forQuery: string;
+  };
+  fetchedPriceMinor: number;
+}
+
+export type ManualResult =
+  | { ok: true }
+  | { ok: false; reason: string }
+  | { ok: false; confirmBinding: PendingConfirmation };
+
 export async function submitManualTransaction(
-  _entry: ManualEntry
-): Promise<{ ok: true } | { ok: false; reason: string }> {
+  _entry: ManualEntry,
+  _bindingDecision?: { pending: PendingConfirmation; accepted: boolean }
+): Promise<ManualResult> {
   return { ok: false, reason: 'Capture is iOS-only' };
+}
+
+export function useAiSettings() {
+  return {
+    enabled: false,
+    hasKey: false,
+    setAiEnabled: async (_on: boolean) => {},
+    saveKey: async (_key: string) => {},
+  };
 }
 
 export async function importEtoroCsvFile(): Promise<
