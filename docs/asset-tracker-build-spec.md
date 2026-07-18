@@ -162,6 +162,21 @@ Three complementary headline metrics — keep them DISTINCT, never merge:
   hourly-rate baseline → the "was it worth it?" verdict. Worked example →
   AED 208/hr vs a 300 baseline → not worth it.
 
+**Display rules (learned from device testing — required):**
+- The per-row / headline return **%** shown in lists is the MONEY return
+  (labor OUT). **NEVER blend labor into a % divided by cost basis** — on a
+  cheap, time-heavy asset (a ¥5,800 box that took 5 hrs) that produces an
+  absurd figure like −423% even though the asset appreciated 7.7×, because
+  the time cost dwarfs the tiny cost basis. Time cost is real, but it is
+  shown as a *currency* figure and a worth-it verdict, never as a percentage
+  of a small basis.
+- **`return_per_hour` does NOT belong on list rows.** Dividing a return by
+  ~0.1 hrs on a quick trade yields a meaningless "AED 4,165/hr" that reads
+  like a wage. It lives on the **asset-detail** screen only, as the worth-it
+  line, and is suppressed/de-emphasized when hours are trivially small.
+- Rows: value + money return % (+ stale marker). The time/labor lens
+  (true profit, hours, worth-it vs baseline) lives on asset detail.
+
 Worked example (rental, one year): nets AED 40k, −AED 15k money costs,
 −120 hrs. At AED 300/hr baseline → labor cost AED 36k → true profit
 ≈ AED −11k, ~AED 208/hr effective. Verdict: the day job beat it.
@@ -200,6 +215,74 @@ Three capture paths, all converging on structured Transactions:
 - Every transaction stores `source_ref` (which file/import produced it).
 - Every imported **statement** stores its date range, so the engine knows
   which periods are already covered and flags gaps/overlaps.
+
+### Capture privacy architecture (resolved)
+Structuring (transcript/text → transaction) uses a **cloud LLM**, with data
+egress minimized on-device:
+- **Voice:** on-device speech-to-text; only the transcript text is sent.
+  Raw audio never leaves the device.
+- **Photo/screenshot:** on-device OCR (Apple Vision / ML Kit); only the
+  extracted text is sent. Raw image never leaves the device.
+- **PDF:** parse the text layer locally (most brokerage statements have
+  one) and send only extracted text/fields; scanned/no-text PDFs fall back
+  to the OCR path.
+- **Cloud tier:** ZDR / no-training terms — confirm the specific API tier's
+  data terms in writing at build (they apply via API data terms, not
+  consumer defaults).
+
+Guardrails (required, not optional):
+- **Minimize the payload, don't just rely on ZDR.** Redact on-device before
+  sending — account numbers, names, addresses. The LLM needs only date,
+  ticker, quantity, price, type, platform; sensitive identifiers must not
+  leave the device even as text.
+- **Raw-image fallback is a visible, per-instance consent** ("couldn't read
+  locally — send the image?"), never a silent auto-send. The stronger
+  guarantee degrades legibly.
+- **Extracted text is untrusted.** LLM must return strict JSON validated
+  against `ParsedTransaction` on-device; output **always** flows through the
+  review queue, never auto-committed. Neutralizes OCR errors and injection.
+- **Cloud structuring is toggleable off** — manual entry always works
+  offline, so local-first stays a user choice.
+
+Open risk to test before locking: on-device OCR accuracy end-to-end
+(image → OCR → LLM → structured txn vs. ground truth) against the *actual*
+brokerages in use (eToro, Trading212) and collector-app screenshots — not
+OCR in isolation, since a ticker flip or dropped decimal only shows
+end-to-end.
+
+### Symbol resolution for market assets (equity / ETF / crypto)
+Manual entry and CSV import must bind a holding to a **verified, canonical
+security**, not free text — otherwise "Microsoft" won't price, a typo goes
+stale silently, and the same name imports as a second asset. Layered:
+
+1. **Bundled static symbol index (offline, instant, private).** Ship a list
+   of US equities + major ETFs (name, symbol, exchange, type) with the
+   **provider pricing id** for each — because *the thing you search is not
+   the thing that prices*: Stooq needs `msft.us`, not `MSFT`; crypto needs
+   the CoinGecko coin-id. Typeahead resolves against this with no network
+   call. Crypto uses the CoinGecko coin list the same way.
+2. **AI fallback on a miss only** (not per keystroke — keeps it cheap and
+   respects the cloud-off toggle). The model proposes
+   `{ displayName, symbol, providerId, confidence }`.
+3. **AI output is a candidate, NEVER a fact** (same discipline as the
+   capture LLM above). It must pass BOTH gates before it binds:
+   - **Live test-fetch** against the real provider → proves the symbol
+     *resolves to a price*.
+   - **User confirmation** → proves it's the *right entity*. A test-fetch
+     only says the symbol is valid, not that it's the company meant (AI
+     mapping "Apple" to AAPL when you meant a reseller prices perfectly).
+     Show it back: "Matched Microsoft Corp — MSFT (NASDAQ), $412. Track?"
+4. **On confirm:** store `{ displayName, canonicalSymbol, providerId }` on
+   the asset (the providerId is what actually prices) AND **cache the
+   name→binding mapping** so the same name never needs AI again.
+5. **CSV import reuses the same resolver + cache** → a hand-added and an
+   imported "Microsoft" land on ONE asset with the SAME pricing id.
+6. **Any miss / low-confidence / test-fetch fail / user rejects → manual,
+   unpriced**, flagged exactly like a collectible so the user knows it won't
+   auto-track. Never blocked, never silently mis-tracking.
+
+Nice-to-have: on selection from the static index too, fire one test-fetch so
+the picker confirms "✓ will track" before the asset is committed.
 
 ---
 
@@ -256,12 +339,16 @@ phase (JPY etc. have no fallback today; outages degrade to stale, not wrong).
    location/platform, top movers. **The by-platform allocation must derive
    from transaction `source_account` (§3.1), so a security split across two
    brokers shows as two location lines — not collapsed under one.**
-2. **Asset list** — grouped by class and by location, each row showing value
-   + true return + return/hour.
+2. **Asset list** — grouped by class and by location, each row showing
+   value + **money return %** (labor out) + stale marker. **No return/hour
+   on rows** (§5 display rules).
 3. **Asset detail** — value history chart, transaction timeline (dates are
-   the spine), the full return breakdown from §5. For a security held on
-   multiple platforms: combined view with a **per-platform breakdown**
-   (quantity, value, average cost per broker).
+   the spine), the full return breakdown from §5 including the time/labor
+   lens: true profit (currency), hours spent, and the **worth-it verdict /
+   return-per-hour vs baseline** — this is the ONLY place per-hour appears,
+   suppressed when hours are trivial. For a security held on multiple
+   platforms: combined view with a **per-platform breakdown** (quantity,
+   value, average cost per broker).
 4. **Capture** — the big one: voice / photo / upload PDF, with a review
    queue for dedup ambiguities.
 5. **Settings** — hourly rate, base currency, per-class time defaults.
@@ -324,3 +411,31 @@ reliable.
   stale-cache path must be *visible* in the UI, not silent.
 - **Speech-to-text provider (Stage 5)** — on-device vs cloud; on-device
   favors the local-first privacy stance.
+
+---
+
+## 14. Future builds (parked — NOT in current MVP)
+
+### Salary runner (net-worth forecaster)
+A scenario layer on top of the tracker. Projects net asset value forward
+~10 years from today's NAV, driven by annual net surplus and per-class
+growth assumptions, with a draggable year-over-year timeline.
+
+- **Input the model doesn't have yet:** an income/spend/liability layer —
+  net annual surplus = salary − spending − liability payments. The tracker
+  today knows assets and the property finance payment, but not paycheck or
+  general spend. That's the main new data this feature needs.
+- **Assumptions per class:** equities %, collectibles %, property
+  appreciation %, cash drag; plus how each year's surplus is allocated.
+- **Interaction:** drag the timeline to extend contributions and see
+  projected NAV per year.
+- **Hard principle — projections NEVER touch actuals.** Assumption-driven
+  forecast figures must never write back into, or be confused with, the
+  measured NAV / returns. Separate surface, clearly labeled "projection."
+  The tracker states what *is*; the runner shows what *might be*.
+- **Honesty over false precision:** collectibles and property are illiquid
+  and assumption-heavy — show ranges/confidence, and consider real vs
+  nominal (inflation) once the basic projection works.
+
+Not scheduled. Revisit after the MVP is running on-device and the capture
+pillar (voice/photo/LLM) is built out.
