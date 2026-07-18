@@ -3,6 +3,7 @@ import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import * as React from 'react';
 import { Text, View } from 'react-native';
 
+import { refreshAll } from '@/services/refresh';
 import { seedIfEmpty } from '@/services/seed';
 
 import { db } from './client';
@@ -16,7 +17,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!success) return;
     seedIfEmpty(db)
-      .then(() => setSeeded(true))
+      .then(() => {
+        setSeeded(true);
+        void refreshAll(db); // fire-and-forget: offline just means stale cache
+      })
       .catch((e: Error) => setSeedError(e));
   }, [success]);
 

@@ -207,8 +207,16 @@ payoff.
 
 Non-negotiable core, not a feature. User holds USD (stocks/crypto), JPY
 (Japanese sealed product), AED (property). Base currency = AED (default,
-changeable). Live FX pulled + cached; `FX_loss` on conversions is captured
-as a monetary cost so it shows up in true return.
+changeable). Live FX pulled + cached.
+
+**Convert each historical flow at its as-of-date rate — NEVER a single spot
+rate for the whole stream.** Converting all history at today's rate strips
+out the FX gain/loss, which is exactly the transaction cost this app exists
+to expose. Store `fx_rates` as a dated series; the engine looks up the rate
+for each flow's date. Surface the FX effect (`FX_loss`) as its own monetary
+-cost line so it shows up in true profit and drags XIRR. `convertTransactions`
+taking one fixed rate is a Stage-3 stepping stone only — portfolio
+aggregation must use per-date rates.
 
 ---
 
