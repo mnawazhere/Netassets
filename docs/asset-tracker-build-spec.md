@@ -72,8 +72,15 @@ native currency?**
 - Every fetcher returns null on failure → last cached price, marked stale;
   nothing throws for network reasons.
 - Refresh on app open + pull-to-refresh; cache last price with timestamp.
-- Multi-account aware: same ticker held on eToro *and* IBKR = two positions
-  under one asset, so "location of assets" is preserved.
+- Multi-account aware: same ticker held on eToro *and* Trading212 = **one
+  asset** (resolved by symbol+class, priced once), but the **location view
+  is derived per-platform from each transaction's `source_account`**, NOT
+  from a single `asset.platform` field. Net quantity per account × shared
+  unit price = that platform's position value; by-platform allocation sums
+  those. This also yields per-platform average cost. `asset.platform` is at
+  most a default label — never the source of truth for location once a
+  security spans two brokers, or the split silently collapses into whichever
+  broker imported first.
 
 ### 3.2 Property
 - **Perceived value, set by voice or manual entry** (e.g. "Reeman unit's
@@ -246,11 +253,15 @@ phase (JPY etc. have no fallback today; outages degrade to stale, not wrong).
 ## 9. Screens (MVP)
 
 1. **Dashboard** — total net worth, allocation by class, allocation by
-   location/platform, top movers.
+   location/platform, top movers. **The by-platform allocation must derive
+   from transaction `source_account` (§3.1), so a security split across two
+   brokers shows as two location lines — not collapsed under one.**
 2. **Asset list** — grouped by class and by location, each row showing value
    + true return + return/hour.
 3. **Asset detail** — value history chart, transaction timeline (dates are
-   the spine), the full return breakdown from §5.
+   the spine), the full return breakdown from §5. For a security held on
+   multiple platforms: combined view with a **per-platform breakdown**
+   (quantity, value, average cost per broker).
 4. **Capture** — the big one: voice / photo / upload PDF, with a review
    queue for dedup ambiguities.
 5. **Settings** — hourly rate, base currency, per-class time defaults.

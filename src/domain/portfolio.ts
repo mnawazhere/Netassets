@@ -13,6 +13,14 @@ export interface AssetSnapshot {
   platform: string | null;
   /** Native-currency valuation from the class adapter; null = unvalued. */
   valuation: Valuation | null;
+  /**
+   * Location slices in native currency (spec §3.1/§9 v6). For market
+   * assets these derive from per-source_account positions × shared price —
+   * a security split across two brokers is TWO slices. For mark-valued
+   * assets it's one slice labeled by asset.platform. Never derived from
+   * asset.platform for market assets.
+   */
+  locations: Array<{ label: string; amountMinor: number }>;
 }
 
 export interface NetWorth {
@@ -49,25 +57,21 @@ export function aggregateNetWorth(
       continue;
     }
     const native = s.valuation;
-    let valueMinor: number;
-    if (native.currency.toUpperCase() === baseCurrency.toUpperCase()) {
-      valueMinor = native.amountMinor;
-    } else {
+    const toBase = (amountMinor: number): number => {
+      if (native.currency.toUpperCase() === baseCurrency.toUpperCase()) return amountMinor;
       const series = rates[native.currency.toUpperCase()];
       if (!series) {
         throw new Error(`No ${native.currency}→${baseCurrency} rates loaded`);
       }
-      valueMinor = convertMinor(
-        native.amountMinor,
-        native.currency,
-        baseCurrency,
-        rateOn(series, asOf)
-      );
-    }
+      return convertMinor(amountMinor, native.currency, baseCurrency, rateOn(series, asOf));
+    };
+
+    const valueMinor = toBase(native.amountMinor);
     total += valueMinor;
     byClass[s.class] = (byClass[s.class] ?? 0) + valueMinor;
-    const platform = s.platform ?? 'Unassigned';
-    byPlatform[platform] = (byPlatform[platform] ?? 0) + valueMinor;
+    for (const slice of s.locations) {
+      byPlatform[slice.label] = (byPlatform[slice.label] ?? 0) + toBase(slice.amountMinor);
+    }
     perAsset.push({ id: s.id, name: s.name, valueMinor, stale: native.stale });
   }
 

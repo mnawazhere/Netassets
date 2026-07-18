@@ -16,6 +16,7 @@ const snapshots: AssetSnapshot[] = [
     platform: 'eToro',
     // 15 shares × $212.40 (cached quote)
     valuation: { amountMinor: 318600, currency: 'USD', asOf: '2025-07-17', stale: false },
+    locations: [{ label: 'eToro', amountMinor: 318600 }],
   },
   {
     id: 'reeman',
@@ -23,6 +24,7 @@ const snapshots: AssetSnapshot[] = [
     class: 'PROPERTY',
     platform: 'Al Reeman',
     valuation: { amountMinor: 160000000, currency: 'AED', asOf: '2025-06-15', stale: true },
+    locations: [{ label: 'Al Reeman', amountMinor: 160000000 }],
   },
   {
     id: 'pokemon',
@@ -30,8 +32,16 @@ const snapshots: AssetSnapshot[] = [
     class: 'COLLECTIBLE',
     platform: 'Home safe',
     valuation: { amountMinor: 45000, currency: 'JPY', asOf: '2025-06-01', stale: true },
+    locations: [{ label: 'Home safe', amountMinor: 45000 }],
   },
-  { id: 'ghost', name: 'Unvalued thing', class: 'COLLECTIBLE', platform: null, valuation: null },
+  {
+    id: 'ghost',
+    name: 'Unvalued thing',
+    class: 'COLLECTIBLE',
+    platform: null,
+    valuation: null,
+    locations: [],
+  },
 ];
 
 const rates = {

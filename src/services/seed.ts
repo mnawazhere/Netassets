@@ -116,6 +116,24 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     },
     'import'
   );
+  // Same security on a second broker — the location view must show this
+  // as its own line (spec §3.1 v6), derived from source_account.
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'BUY',
+      date: '2025-06-10',
+      amountMinor: -toMinor('1050.00', 'USD'), // 5 × 210.00
+      currency: 'USD',
+      quantity: 5,
+      hoursSpent: 0.1,
+      sourceAccount: 'trading212',
+      sourceTxnId: 'T212-555001',
+      sourceRef: null,
+    },
+    'import'
+  );
   await insertTransaction(
     db,
     {
