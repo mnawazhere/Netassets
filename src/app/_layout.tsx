@@ -4,6 +4,8 @@ import { Tabs } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Text, useColorScheme, type ColorValue } from 'react-native';
 
+import { DatabaseProvider } from '@/db/provider';
+
 const NAVY = '#0B1D3A';
 const NAVY_DARK_BG = '#070F1F';
 const BLUE_LIGHT = '#6EA8F7';
@@ -17,7 +19,7 @@ export default function RootLayout() {
   const dark = scheme === 'dark';
 
   return (
-    <>
+    <DatabaseProvider>
       <StatusBar style={dark ? 'light' : 'dark'} />
       <Tabs
         screenOptions={{
@@ -58,6 +60,6 @@ export default function RootLayout() {
           }}
         />
       </Tabs>
-    </>
+    </DatabaseProvider>
   );
 }

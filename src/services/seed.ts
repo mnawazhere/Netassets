@@ -1,0 +1,246 @@
+/**
+ * First-launch demo portfolio — exercises every table so each later stage
+ * has real rows to work against: a multi-lot US equity (USD, imported), a
+ * rental property (AED, manual/voice), and a sealed collectible (JPY —
+ * 0-decimal currency on purpose).
+ */
+import { fxRates, imports, priceCache } from '@/db/schema';
+import type { Db } from '@/db/client';
+import { toMinor } from '@/domain/money';
+import { nowISO, uuid } from '@/lib/uuid';
+import { createAsset, listAssets } from '@/repositories/assets';
+import { SETTING_KEYS, setSetting } from '@/repositories/settings';
+import {
+  insertLot,
+  insertTransaction,
+  insertValuationMark,
+} from '@/repositories/transactions';
+
+export async function seedIfEmpty(db: Db): Promise<void> {
+  const existing = await listAssets(db);
+  if (existing.length > 0) return;
+
+  const now = nowISO();
+
+  // --- Settings: AED base, AED 300/hr baseline (spec §5 worked example) ---
+  await setSetting(db, SETTING_KEYS.baseCurrency, 'AED', 'system');
+  await setSetting(db, SETTING_KEYS.hourlyRateCurrency, 'AED', 'system');
+  await setSetting(db, SETTING_KEYS.hourlyRateMinor, String(toMinor('300', 'AED')), 'system');
+
+  // --- Cached FX (Stage 4 replaces with a live provider) ---
+  await db.insert(fxRates).values([
+    { id: uuid(), base: 'USD', quote: 'AED', rate: 3.6725, asOf: now },
+    { id: uuid(), base: 'JPY', quote: 'AED', rate: 0.0239, asOf: now },
+  ]);
+
+  // --- 1. Equity: AAPL on eToro (USD), two lots, one dividend, imported ---
+  const importId = uuid();
+  await db.insert(imports).values({
+    id: importId,
+    fileName: 'etoro-statement-2025-H1.pdf',
+    kind: 'pdf',
+    platform: 'eToro',
+    periodStart: '2025-01-01',
+    periodEnd: '2025-06-30',
+    status: 'processed',
+    importedAt: now,
+  });
+
+  const aapl = await createAsset(db, {
+    class: 'EQUITY',
+    name: 'Apple Inc.',
+    platform: 'eToro',
+    currency: 'USD',
+    symbol: 'AAPL',
+  });
+  await insertLot(db, {
+    assetId: aapl,
+    quantity: 10,
+    unitPriceMinor: toMinor('185.30', 'USD'),
+    feesMinor: toMinor('1.50', 'USD'),
+    currency: 'USD',
+    date: '2025-01-15',
+    sourceRef: importId,
+  });
+  await insertLot(db, {
+    assetId: aapl,
+    quantity: 5,
+    unitPriceMinor: toMinor('201.10', 'USD'),
+    feesMinor: toMinor('1.50', 'USD'),
+    currency: 'USD',
+    date: '2025-04-02',
+    sourceRef: importId,
+  });
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'BUY',
+      date: '2025-01-15',
+      amountMinor: -toMinor('1854.50', 'USD'), // 10 × 185.30 + 1.50 fee
+      currency: 'USD',
+      quantity: 10,
+      hoursSpent: 0.1,
+      sourceAccount: 'etoro',
+      sourceRef: importId,
+    },
+    'import'
+  );
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'BUY',
+      date: '2025-04-02',
+      amountMinor: -toMinor('1007.00', 'USD'), // 5 × 201.10 + 1.50 fee
+      currency: 'USD',
+      quantity: 5,
+      hoursSpent: 0.1,
+      sourceAccount: 'etoro',
+      sourceRef: importId,
+    },
+    'import'
+  );
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'DIVIDEND',
+      date: '2025-05-15',
+      amountMinor: toMinor('3.75', 'USD'),
+      currency: 'USD',
+      quantity: null,
+      hoursSpent: 0,
+      sourceAccount: 'etoro',
+      sourceRef: importId,
+    },
+    'import'
+  );
+  await db.insert(priceCache).values({
+    id: uuid(),
+    symbol: 'AAPL',
+    currency: 'USD',
+    priceMinor: toMinor('212.40', 'USD'),
+    asOf: now,
+  });
+
+  // --- 2. Property: Reeman unit (AED), rent in, maintenance out, marked value ---
+  const reeman = await createAsset(db, {
+    class: 'PROPERTY',
+    name: 'Reeman unit',
+    platform: 'Al Reeman',
+    currency: 'AED',
+  });
+  await insertLot(db, {
+    assetId: reeman,
+    quantity: 1,
+    unitPriceMinor: toMinor('1450000', 'AED'),
+    feesMinor: toMinor('29000', 'AED'), // 2% transfer fee
+    currency: 'AED',
+    date: '2024-06-01',
+    sourceRef: null,
+  });
+  await insertTransaction(
+    db,
+    {
+      assetId: reeman,
+      type: 'BUY',
+      date: '2024-06-01',
+      amountMinor: -toMinor('1479000', 'AED'),
+      currency: 'AED',
+      quantity: 1,
+      hoursSpent: 40,
+      sourceAccount: null,
+      sourceRef: null,
+    },
+    'manual'
+  );
+  for (const month of ['2025-04-01', '2025-05-01', '2025-06-01']) {
+    await insertTransaction(
+      db,
+      {
+        assetId: reeman,
+        type: 'RENT',
+        date: month,
+        amountMinor: toMinor('7000', 'AED'),
+        currency: 'AED',
+        quantity: null,
+        hoursSpent: 10, // default property maintenance time (spec §4)
+        sourceAccount: null,
+        sourceRef: null,
+      },
+      'voice'
+    );
+  }
+  await insertTransaction(
+    db,
+    {
+      assetId: reeman,
+      type: 'MAINTENANCE',
+      date: '2025-05-20',
+      amountMinor: -toMinor('3200', 'AED'),
+      currency: 'AED',
+      quantity: null,
+      hoursSpent: 4,
+      sourceAccount: null,
+      sourceRef: null,
+    },
+    'manual'
+  );
+  await insertValuationMark(db, {
+    assetId: reeman,
+    date: '2024-06-01',
+    valueMinor: toMinor('1450000', 'AED'),
+    currency: 'AED',
+    source: 'manual',
+    note: 'Purchase price',
+  });
+  await insertValuationMark(db, {
+    assetId: reeman,
+    date: '2025-06-15',
+    valueMinor: toMinor('1600000', 'AED'),
+    currency: 'AED',
+    source: 'voice',
+    note: '"Reeman unit\'s worth ~1.6M now"',
+  });
+
+  // --- 3. Collectible: sealed Pokémon box (JPY — 0-decimal currency) ---
+  const pokemon = await createAsset(db, {
+    class: 'COLLECTIBLE',
+    name: 'Pokémon 151 sealed booster box',
+    platform: 'Home safe',
+    currency: 'JPY',
+  });
+  await insertLot(db, {
+    assetId: pokemon,
+    quantity: 1,
+    unitPriceMinor: toMinor('5800', 'JPY'),
+    feesMinor: 0,
+    currency: 'JPY',
+    date: '2023-09-22',
+    sourceRef: null,
+  });
+  await insertTransaction(
+    db,
+    {
+      assetId: pokemon,
+      type: 'BUY',
+      date: '2023-09-22',
+      amountMinor: -toMinor('5800', 'JPY'),
+      currency: 'JPY',
+      quantity: 1,
+      hoursSpent: 5, // 4 hrs in line + 1 hr travel (spec §4)
+      sourceAccount: null,
+      sourceRef: null,
+    },
+    'manual'
+  );
+  await insertValuationMark(db, {
+    assetId: pokemon,
+    date: '2025-06-01',
+    valueMinor: toMinor('45000', 'JPY'),
+    currency: 'JPY',
+    source: 'manual',
+    note: 'Sealed, market ask',
+  });
+}
