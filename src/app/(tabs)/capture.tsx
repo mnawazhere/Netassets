@@ -13,6 +13,7 @@ import {
   classHoursDefault,
   importEtoroCsvFile,
   listAssetOptions,
+  listKnownAccounts,
   submitManualTransaction,
   useReviewQueue,
 } from '@/hooks/data';
@@ -38,10 +39,14 @@ export default function CaptureScreen() {
   const [date, setDate] = React.useState(todayISO());
   const [quantity, setQuantity] = React.useState('');
   const [hoursSpent, setHoursSpent] = React.useState('');
+  const [account, setAccount] = React.useState('');
+  const [knownAccounts, setKnownAccounts] = React.useState<string[]>([]);
+  const [location, setLocation] = React.useState('');
   const [busy, setBusy] = React.useState(false);
 
   const reloadAssets = React.useCallback(async () => {
     setAssets(await listAssetOptions());
+    setKnownAccounts(await listKnownAccounts());
   }, []);
 
   React.useEffect(() => {
@@ -59,6 +64,10 @@ export default function CaptureScreen() {
   React.useEffect(() => {
     if (selected) setCurrency(selected.currency);
   }, [selected]);
+
+  const activeClass = assetId ? (selected?.class ?? null) : newAssetClass;
+  const isMarketTxn = activeClass !== null && MARKET_CLASSES.has(activeClass);
+  const accountChips = [...new Set(['etoro', 'trading212', ...knownAccounts])];
 
   const onImportCsv = async () => {
     setBusy(true);
@@ -98,7 +107,9 @@ export default function CaptureScreen() {
             class: newAssetClass,
             symbol: binding?.symbol ?? null,
             providerId: binding?.providerId ?? null,
-            platform: null,
+            // Market assets locate via each txn's account; others via the
+            // asset's platform label (Home safe, Al Reeman…).
+            platform: isMarketTxn ? account.trim() || null : location.trim() || null,
             currency: currency.toUpperCase(),
           },
       type,
@@ -107,7 +118,8 @@ export default function CaptureScreen() {
       currency,
       quantity: quantity.trim() ? Number(quantity) : null,
       hoursSpent: hoursSpent.trim() ? Number(hoursSpent) : 0,
-      sourceAccount: null,
+      // Where this trade sits — drives the by-location view (§3.1).
+      sourceAccount: isMarketTxn ? account.trim() || null : null,
       note: null,
     };
     const showResult = async (result: Awaited<ReturnType<typeof submitManualTransaction>>) => {
@@ -303,6 +315,29 @@ export default function CaptureScreen() {
               ) : null}
               <Input label="New asset name" value={newAssetName} onChangeText={setNewAssetName} />
             </>
+          ) : null}
+          {isMarketTxn ? (
+            <>
+              <Text variant="muted">Account — where you hold it (drives the by-location view)</Text>
+              <ChipRow
+                options={accountChips as readonly string[]}
+                value={account || null}
+                onChange={setAccount}
+              />
+              <Input
+                label="or type another account"
+                value={account}
+                onChangeText={setAccount}
+                autoCapitalize="none"
+                placeholder="etoro / trading212 / ibkr…"
+              />
+            </>
+          ) : !assetId ? (
+            <Input
+              label="Location / platform (e.g. Home safe, Al Reeman)"
+              value={location}
+              onChangeText={setLocation}
+            />
           ) : null}
           <Text variant="muted">Type</Text>
           <ChipRow options={TXN_TYPES} value={type} onChange={setType} />

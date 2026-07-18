@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { positionValueMinor, quantityHeld } from './position';
+import { normalizeAccount, positionValueMinor, quantityHeld } from './position';
 
 describe('quantityHeld', () => {
   it('sums buys minus sells', () => {
@@ -16,6 +16,20 @@ describe('quantityHeld', () => {
 
   it('empty stream holds zero', () => {
     expect(quantityHeld([])).toBe(0);
+  });
+});
+
+describe('normalizeAccount', () => {
+  it("canonicalizes so 'eToro' and 'etoro' are ONE location line", () => {
+    expect(normalizeAccount(' eToro ')).toBe('etoro');
+    expect(normalizeAccount('Trading212')).toBe('trading212');
+  });
+
+  it('empty-ish input is null (unassigned), not an empty-string bucket', () => {
+    expect(normalizeAccount('')).toBeNull();
+    expect(normalizeAccount('   ')).toBeNull();
+    expect(normalizeAccount(null)).toBeNull();
+    expect(normalizeAccount(undefined)).toBeNull();
   });
 });
 

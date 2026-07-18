@@ -52,6 +52,10 @@ export async function listAssetOptions(): Promise<
   return [];
 }
 
+export async function listKnownAccounts(): Promise<string[]> {
+  return [];
+}
+
 export interface ManualEntry {
   assetId: string | null;
   newAsset: {

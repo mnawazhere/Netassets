@@ -2,6 +2,17 @@
 import { roundHalfEven } from './money';
 import type { CashTxn } from './returns/engine';
 
+/**
+ * Canonical account key for source_account. Positions group by EXACT
+ * string, so 'eToro' vs 'etoro' would silently split one broker into two
+ * location lines — every entry path must normalize through here (imports
+ * already use lowercase).
+ */
+export function normalizeAccount(raw: string | null | undefined): string | null {
+  const s = raw?.trim().toLowerCase();
+  return s ? s : null;
+}
+
 /** Units currently held: Σ BUY quantities − Σ SELL quantities. */
 export function quantityHeld(txns: Array<CashTxn & { quantity?: number | null }>): number {
   let qty = 0;

@@ -8,7 +8,9 @@ import { File } from 'expo-file-system';
 import * as React from 'react';
 
 import { db } from '@/db/client';
+import { transactions } from '@/db/schema';
 import type { AssetClass, TransactionType } from '@/db/schema';
+import { normalizeAccount } from '@/domain/position';
 import { parseEtoroCsv } from '@/domain/ingestion/etoro';
 import { toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
@@ -118,6 +120,17 @@ export async function listAssetOptions() {
   }));
 }
 
+/** Accounts already seen on transactions — the chips for "where held". */
+export async function listKnownAccounts(): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ sourceAccount: transactions.sourceAccount })
+    .from(transactions);
+  return rows
+    .map((r) => r.sourceAccount)
+    .filter((a): a is string => a !== null && a !== '')
+    .sort();
+}
+
 export interface ManualEntry {
   assetId: string | null;
   newAsset: {
@@ -225,7 +238,7 @@ export async function submitManualTransaction(
         currency: entry.currency.toUpperCase(),
         quantity: entry.quantity,
         hoursSpent: entry.hoursSpent,
-        sourceAccount: entry.sourceAccount,
+        sourceAccount: normalizeAccount(entry.sourceAccount),
         sourceTxnId: null,
         sourceRef: null,
         note: entry.note,
