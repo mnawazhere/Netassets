@@ -30,10 +30,15 @@ async function fetchWithTimeout(url: string): Promise<Response | null> {
   }
 }
 
-/** US equities / ETFs via Stooq EOD. Symbol is the plain ticker (AAPL). */
-export async function fetchEquityPrice(symbol: string): Promise<PricePoint | null> {
+/** US equities / ETFs via Stooq EOD. `providerId` is the Stooq id
+ *  (`aapl.us`); when absent, derived from the plain ticker. */
+export async function fetchEquityPrice(
+  symbol: string,
+  providerId?: string | null
+): Promise<PricePoint | null> {
+  const stooqId = providerId ?? `${symbol.toLowerCase().replace(/\./g, '-')}.us`;
   const res = await fetchWithTimeout(
-    `https://stooq.com/q/l/?s=${encodeURIComponent(symbol.toLowerCase())}.us&f=sd2t2ohlcv&h&e=csv`
+    `https://stooq.com/q/l/?s=${encodeURIComponent(stooqId)}&f=sd2t2ohlcv&h&e=csv`
   );
   if (!res) return null;
   const parsed = parseStooqCsv(await res.text(), 'USD');
@@ -55,8 +60,11 @@ export function coinGeckoId(symbol: string): string | null {
   return COINGECKO_IDS[symbol.toUpperCase()] ?? null;
 }
 
-export async function fetchCryptoPrice(symbol: string): Promise<PricePoint | null> {
-  const id = coinGeckoId(symbol);
+export async function fetchCryptoPrice(
+  symbol: string,
+  providerId?: string | null
+): Promise<PricePoint | null> {
+  const id = providerId ?? coinGeckoId(symbol);
   if (!id) return null;
   const res = await fetchWithTimeout(
     `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_last_updated_at=true`

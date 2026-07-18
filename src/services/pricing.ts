@@ -19,8 +19,8 @@ export async function refreshPrices(db: Db): Promise<{ updated: string[]; failed
     if (!isMarketPriced(asset.class) || !asset.symbol) continue;
     const point =
       asset.class === 'CRYPTO'
-        ? await fetchCryptoPrice(asset.symbol)
-        : await fetchEquityPrice(asset.symbol);
+        ? await fetchCryptoPrice(asset.symbol, asset.providerId)
+        : await fetchEquityPrice(asset.symbol, asset.providerId);
     if (!point) {
       failed.push(asset.symbol);
       continue;

@@ -7,6 +7,8 @@ import { ChipRow } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import type { AssetClass, TransactionType } from '@/db/schema';
+import { searchSymbols } from '@/domain/symbols/search';
+import type { SecurityEntry } from '@/domain/symbols/types';
 import {
   classHoursDefault,
   importEtoroCsvFile,
@@ -18,6 +20,7 @@ import { todayISO } from '@/lib/format';
 
 const TXN_TYPES: readonly TransactionType[] = ['BUY', 'SELL', 'DIVIDEND', 'RENT', 'FEE', 'MAINTENANCE'];
 const CLASSES: readonly AssetClass[] = ['EQUITY', 'CRYPTO', 'ETF', 'PROPERTY', 'COLLECTIBLE'];
+const MARKET_CLASSES = new Set<AssetClass>(['EQUITY', 'CRYPTO', 'ETF']);
 
 export default function CaptureScreen() {
   const review = useReviewQueue();
@@ -27,6 +30,8 @@ export default function CaptureScreen() {
   const [assetId, setAssetId] = React.useState<string | null>(null);
   const [newAssetName, setNewAssetName] = React.useState('');
   const [newAssetClass, setNewAssetClass] = React.useState<AssetClass>('COLLECTIBLE');
+  const [symbolQuery, setSymbolQuery] = React.useState('');
+  const [binding, setBinding] = React.useState<SecurityEntry | null>(null);
   const [type, setType] = React.useState<TransactionType>('BUY');
   const [amount, setAmount] = React.useState('');
   const [currency, setCurrency] = React.useState('AED');
@@ -92,7 +97,8 @@ export default function CaptureScreen() {
           : {
               name: newAssetName.trim(),
               class: newAssetClass,
-              symbol: null,
+              symbol: binding?.symbol ?? null,
+              providerId: binding?.providerId ?? null,
               platform: null,
               currency: currency.toUpperCase(),
             },
@@ -185,9 +191,64 @@ export default function CaptureScreen() {
           />
           {!assetId ? (
             <>
-              <Input label="New asset name" value={newAssetName} onChangeText={setNewAssetName} />
               <Text variant="muted">Class</Text>
-              <ChipRow options={CLASSES} value={newAssetClass} onChange={setNewAssetClass} />
+              <ChipRow
+                options={CLASSES}
+                value={newAssetClass}
+                onChange={(c) => {
+                  setNewAssetClass(c);
+                  setBinding(null);
+                  setSymbolQuery('');
+                }}
+              />
+              {MARKET_CLASSES.has(newAssetClass) ? (
+                binding ? (
+                  <View className="rounded-lg border border-primary bg-secondary px-3 py-2">
+                    <Text className="text-sm font-semibold">
+                      {binding.displayName} — {binding.symbol}
+                      {binding.exchange ? ` (${binding.exchange})` : ''}
+                    </Text>
+                    <Text variant="muted" className="text-xs">
+                      prices via {binding.providerId} ·{' '}
+                      <Text className="text-xs underline" onPress={() => setBinding(null)}>
+                        change
+                      </Text>
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Input
+                      label="Search security (name or ticker — offline index)"
+                      value={symbolQuery}
+                      onChangeText={setSymbolQuery}
+                      autoCapitalize="none"
+                    />
+                    {symbolQuery.trim()
+                      ? searchSymbols(symbolQuery, { class: newAssetClass as SecurityEntry['class'], limit: 5 }).map((e) => (
+                          <Text
+                            key={e.providerId}
+                            className="border-b border-border py-2 text-sm"
+                            onPress={() => {
+                              setBinding(e);
+                              setNewAssetName(e.displayName);
+                              setCurrency(e.currency);
+                            }}>
+                            {e.displayName} — {e.symbol}
+                            {e.exchange ? ` (${e.exchange})` : ''}
+                          </Text>
+                        ))
+                      : null}
+                    {symbolQuery.trim() &&
+                    searchSymbols(symbolQuery, { class: newAssetClass as SecurityEntry['class'], limit: 1 }).length === 0 ? (
+                      <Text variant="muted" className="text-xs">
+                        No match in the offline index — it can be added unpriced (tracked like a
+                        collectible). AI lookup arrives in the next stage.
+                      </Text>
+                    ) : null}
+                  </>
+                )
+              ) : null}
+              <Input label="New asset name" value={newAssetName} onChangeText={setNewAssetName} />
             </>
           ) : null}
           <Text variant="muted">Type</Text>

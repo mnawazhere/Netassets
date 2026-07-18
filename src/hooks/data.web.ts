@@ -58,6 +58,7 @@ export interface ManualEntry {
     name: string;
     class: AssetClass;
     symbol: string | null;
+    providerId: string | null;
     platform: string | null;
     currency: string;
   } | null;

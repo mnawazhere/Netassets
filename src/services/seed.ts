@@ -54,6 +54,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     platform: 'eToro',
     currency: 'USD',
     symbol: 'AAPL',
+    providerId: 'aapl.us',
   });
   const etoro = { sourceAccount: 'etoro', sourceRef: importId };
   await insertTransaction(

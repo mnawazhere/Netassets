@@ -1,0 +1,1 @@
+ALTER TABLE `assets` ADD `provider_id` text;

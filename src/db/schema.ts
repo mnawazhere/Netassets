@@ -42,6 +42,9 @@ export const assets = sqliteTable(
     currency: text('currency').notNull(),
     /** Ticker/symbol for auto-priced classes (AAPL, BTC…). */
     symbol: text('symbol'),
+    /** Provider pricing id (spec §6): Stooq `aapl.us` / CoinGecko `bitcoin`.
+     *  Null on a market-class asset = unpriced (flagged like a collectible). */
+    providerId: text('provider_id'),
     /** Collectibles: grade + grader (PSA/BGS/CGC); null elsewhere. */
     grade: text('grade'),
     grader: text('grader'),

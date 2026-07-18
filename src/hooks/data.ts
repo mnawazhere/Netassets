@@ -119,6 +119,8 @@ export interface ManualEntry {
     name: string;
     class: AssetClass;
     symbol: string | null;
+    /** Provider pricing id from the symbol index (§6); null = unpriced. */
+    providerId: string | null;
     platform: string | null;
     currency: string;
   } | null;
