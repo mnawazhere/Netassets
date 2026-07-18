@@ -86,7 +86,7 @@ export interface PendingConfirmation {
 }
 
 export type ManualResult =
-  | { ok: true }
+  | { ok: true; priced?: boolean }
   | { ok: false; reason: string }
   | { ok: false; confirmBinding: PendingConfirmation };
 

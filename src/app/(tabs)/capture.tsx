@@ -124,7 +124,14 @@ export default function CaptureScreen() {
     };
     const showResult = async (result: Awaited<ReturnType<typeof submitManualTransaction>>) => {
       if (result.ok) {
-        Alert.alert('Saved', 'Transaction recorded (audited in change log).');
+        Alert.alert(
+          'Saved',
+          result.priced === false
+            ? 'Transaction recorded — but the price fetch FAILED (offline, or the provider is unreachable from this network). The asset shows unpriced until a refresh succeeds.'
+            : result.priced === true
+              ? 'Transaction recorded — priced and tracking.'
+              : 'Transaction recorded (audited in change log).'
+        );
         setAmount('');
         setQuantity('');
         await reloadAssets();

@@ -156,7 +156,10 @@ export interface ManualEntry {
 const NEGATIVE_TYPES = new Set<TransactionType>(['BUY', 'FEE', 'MAINTENANCE']);
 
 export type ManualResult =
-  | { ok: true }
+  /** priced: true = fetched/primed now; false = fetch FAILED (network or
+   *  provider) — surfaced so a reachability problem is visible at save
+   *  time, not a mystery dash later; undefined = not a pricing situation. */
+  | { ok: true; priced?: boolean }
   | { ok: false; reason: string }
   | { ok: false; confirmBinding: PendingConfirmation };
 
@@ -170,6 +173,7 @@ export async function submitManualTransaction(
 ): Promise<ManualResult> {
   try {
     let assetId = entry.assetId;
+    let priced: boolean | undefined;
     if (!assetId) {
       if (!entry.newAsset) return { ok: false, reason: 'Pick an asset or create one' };
       let hint: Parameters<typeof ensureAsset>[1] = {
@@ -218,12 +222,14 @@ export async function submitManualTransaction(
             currency: hint.currency,
             priceMinor: bindingDecision.pending.fetchedPriceMinor,
           });
+          priced = true;
         } else {
-          await refreshPriceFor(db, {
+          // offline/provider-down → false; surfaced in the save alert.
+          priced = await refreshPriceFor(db, {
             class: hint.class,
             symbol: hint.symbol,
             providerId: hint.providerId,
-          }); // offline → stays unvalued until refresh; never throws
+          });
         }
       }
     }
@@ -245,7 +251,7 @@ export async function submitManualTransaction(
       },
       'manual'
     );
-    return { ok: true };
+    return { ok: true, priced };
   } catch (e) {
     if (String(e).toLowerCase().includes('unique')) {
       return { ok: false, reason: 'Duplicate of an existing transaction (same fingerprint)' };
