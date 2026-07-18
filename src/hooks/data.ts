@@ -13,7 +13,8 @@ import { parseEtoroCsv } from '@/domain/ingestion/etoro';
 import { toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
 import { changesFor } from '@/repositories/changeLog';
-import { createAsset, listAssets, valuationMarksFor } from '@/repositories/assets';
+import { listAssets, valuationMarksFor } from '@/repositories/assets';
+import { ensureAsset } from '@/services/resolution';
 import { pendingReviews, resolveReview } from '@/repositories/reviewQueue';
 import { SETTING_KEYS, getSetting, setSetting } from '@/repositories/settings';
 import { insertTransaction } from '@/repositories/transactions';
@@ -144,7 +145,17 @@ export async function submitManualTransaction(
     let assetId = entry.assetId;
     if (!assetId) {
       if (!entry.newAsset) return { ok: false, reason: 'Pick an asset or create one' };
-      assetId = await createAsset(db, entry.newAsset);
+      // Same shared resolver path as CSV import (7B-2): a hand-added name
+      // and an imported ticker can only land on one asset, one providerId.
+      const ensured = await ensureAsset(db, {
+        name: entry.newAsset.name,
+        symbol: entry.newAsset.symbol,
+        class: entry.newAsset.class,
+        platform: entry.newAsset.platform,
+        currency: entry.newAsset.currency,
+        providerId: entry.newAsset.providerId,
+      });
+      assetId = ensured.assetId;
     }
     const magnitude = Math.abs(toMinor(entry.amount, entry.currency));
     await insertTransaction(

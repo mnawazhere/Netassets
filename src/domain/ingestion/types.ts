@@ -10,6 +10,8 @@ export interface ParsedTransaction {
     class: 'EQUITY' | 'CRYPTO' | 'ETF' | 'PROPERTY' | 'COLLECTIBLE';
     platform?: string | null;
     currency: string;
+    /** Provider pricing id once bound (7B-2); null/absent = unbound. */
+    providerId?: string | null;
   };
   type: 'BUY' | 'SELL' | 'DIVIDEND' | 'RENT' | 'FEE' | 'MAINTENANCE' | 'TRANSFER';
   /** ISO YYYY-MM-DD */

@@ -168,6 +168,29 @@ export const priceCache = sqliteTable(
 );
 
 /**
+ * Persisted symbol-mapping cache (spec §6, 7B-2): normalized name/ticker
+ * key → confirmed binding. Written when an asset binds (index pick or a
+ * gate-passed AI proposal); read by the shared resolver so the same name
+ * never needs re-resolution — and never splits into two assets.
+ */
+export const symbolMappings = sqliteTable(
+  'symbol_mappings',
+  {
+    id: text('id').primaryKey(),
+    /** Normalized lookup key (norm(): trim + uppercase). */
+    key: text('key').notNull(),
+    class: text('class', { enum: ['EQUITY', 'CRYPTO', 'ETF'] }).notNull(),
+    displayName: text('display_name').notNull(),
+    symbol: text('symbol').notNull(),
+    providerId: text('provider_id').notNull(),
+    currency: text('currency').notNull(),
+    source: text('source', { enum: ['index', 'ai', 'manual'] }).notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('symbol_mappings_key_class_uq').on(t.key, t.class)]
+);
+
+/**
  * Dedup review queue (spec §6): weak-key collisions and near-matches park
  * here for one-tap keep / merge / discard — never silently dropped, never
  * an uncaught DB throw. `payload` is the parsed-transaction JSON.

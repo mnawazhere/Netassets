@@ -4,7 +4,7 @@
  * real SQLite (better-sqlite3) through the real migrations, so the unique
  * index, FKs, and the full service path are all exercised.
  */
-import { beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { readFileSync, readdirSync } from 'fs';
@@ -18,8 +18,11 @@ import { runImport, type ImportRequest } from './ingestion';
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 
+let openHandles: Database.Database[] = [];
+
 function makeDb(): Db {
   const sqlite = new Database(':memory:');
+  openHandles.push(sqlite);
   sqlite.exec('PRAGMA foreign_keys = ON;');
   for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()) {
     for (const stmt of readFileSync(join(MIGRATIONS_DIR, file), 'utf8').split('--> statement-breakpoint')) {
@@ -30,6 +33,11 @@ function makeDb(): Db {
   // driver types for tests only.
   return drizzle(sqlite, { schema }) as unknown as Db;
 }
+
+afterEach(() => {
+  for (const h of openHandles) h.close();
+  openHandles = [];
+});
 
 const ETORO_CSV = [
   'Date,Type,Details,Amount,Units,Realized Equity Change,Realized Equity,Balance,Position ID,Asset type,NWA',

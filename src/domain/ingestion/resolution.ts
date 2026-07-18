@@ -16,6 +16,7 @@ export interface ExistingAsset {
   name: string;
   symbol: string | null;
   platform: string | null;
+  providerId?: string | null;
 }
 
 export type Resolution =
@@ -28,6 +29,7 @@ export type Resolution =
         symbol: string | null;
         platform: string | null;
         currency: string;
+        providerId: string | null;
       };
     };
 
@@ -41,7 +43,14 @@ export function resolveAsset(existing: ExistingAsset[], hint: ParsedTransaction[
   if (MARKET_CLASSES.has(hint.class)) {
     const symbol = norm(hint.symbol);
     if (!symbol) throw new Error(`Market-priced ${hint.class} row needs a symbol to resolve`);
-    const match = existing.find((a) => a.class === hint.class && norm(a.symbol) === symbol);
+    // One security = one asset: match on canonical symbol, or on the
+    // provider pricing id when both sides carry one (the stronger key).
+    const match = existing.find(
+      (a) =>
+        a.class === hint.class &&
+        (norm(a.symbol) === symbol ||
+          (hint.providerId != null && a.providerId != null && a.providerId === hint.providerId))
+    );
     if (match) return { kind: 'existing', assetId: match.id };
     return {
       kind: 'create',
@@ -51,6 +60,7 @@ export function resolveAsset(existing: ExistingAsset[], hint: ParsedTransaction[
         symbol,
         platform: hint.platform ?? null,
         currency: hint.currency.toUpperCase(),
+        providerId: hint.providerId ?? null,
       },
     };
   }
@@ -67,6 +77,7 @@ export function resolveAsset(existing: ExistingAsset[], hint: ParsedTransaction[
       symbol: null,
       platform: hint.platform ?? null,
       currency: hint.currency.toUpperCase(),
+      providerId: null,
     },
   };
 }

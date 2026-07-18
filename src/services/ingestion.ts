@@ -15,10 +15,14 @@ import { analyzeCoverage, type CoverageReport } from '@/domain/ingestion/coverag
 import { planRow } from '@/domain/ingestion/dedup';
 import { resolveAsset, type ExistingAsset } from '@/domain/ingestion/resolution';
 import type { CoveredRange, ExistingTxn, ParsedTransaction } from '@/domain/ingestion/types';
+import type { Binding } from '@/domain/symbols/resolver';
 import { nowISO, uuid } from '@/lib/uuid';
 import { createAsset, listAssets } from '@/repositories/assets';
 import { enqueueReview } from '@/repositories/reviewQueue';
+import { loadCacheLookup, saveMapping } from '@/repositories/symbolMappings';
 import { insertTransaction } from '@/repositories/transactions';
+
+import { bindHint } from './resolution';
 
 export interface ImportRequest {
   fileName: string;
@@ -71,18 +75,21 @@ export async function runImport(db: Db, req: ImportRequest): Promise<ImportSumma
     importedAt: nowISO(),
   });
 
-  // ---- 1. Asset resolution, FIRST ----
+  // ---- 1. Asset resolution, FIRST — through the SHARED binding path ----
+  const bindingCache = await loadCacheLookup(db);
   const known: ExistingAsset[] = (await listAssets(db)).map((a) => ({
     id: a.id,
     class: a.class,
     name: a.name,
     symbol: a.symbol,
     platform: a.platform,
+    providerId: a.providerId,
   }));
   let assetsCreated = 0;
   const resolved: Array<ParsedTransaction & { assetId: string }> = [];
   for (const row of req.rows) {
-    const resolution = resolveAsset(known, row.asset);
+    const hint = bindHint(row.asset, bindingCache);
+    const resolution = resolveAsset(known, hint);
     let assetId: string;
     if (resolution.kind === 'existing') {
       assetId = resolution.assetId;
@@ -90,6 +97,20 @@ export async function runImport(db: Db, req: ImportRequest): Promise<ImportSumma
       assetId = await createAsset(db, resolution.asset);
       known.push({ id: assetId, ...resolution.asset });
       assetsCreated++;
+      if (resolution.asset.providerId) {
+        await saveMapping(
+          db,
+          {
+            displayName: resolution.asset.name,
+            symbol: resolution.asset.symbol!,
+            class: hint.class as Binding['class'],
+            providerId: resolution.asset.providerId,
+            currency: resolution.asset.currency,
+          },
+          'index',
+          row.asset.symbol ?? row.asset.name ?? undefined
+        );
+      }
     }
     resolved.push({ ...row, assetId });
   }
