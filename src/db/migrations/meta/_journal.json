@@ -15,6 +15,13 @@
       "when": 1784367438252,
       "tag": "0001_third_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784370684127,
+      "tag": "0002_amusing_hercules",
+      "breakpoints": true
     }
   ]
 }

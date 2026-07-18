@@ -59,10 +59,18 @@ Each adapter answers one question: **what is this worth right now, in its
 native currency?**
 
 ### 3.1 Equities / Crypto / ETFs
-- Auto-priced via market-data API by ticker/symbol. Scope is global
-  markets that are well-served (US equities, crypto, major ETFs).
+- Auto-priced by ticker/symbol. Scope is global markets that are
+  well-served (US equities, crypto, major ETFs).
   **UAE local exchanges (ADX/DFM) are explicitly out of scope** — any
   local-exchange holding is entered manually, same path as property.
+- **Providers (Stage 4, resolved):** equities/ETFs via Stooq EOD CSV
+  (keyless, delayed EOD; has a daily hit quota — fine for a personal
+  handful of tickers, quota-exceed → stale cache). Crypto via CoinGecko
+  public tier (keyless). Fallbacks if Stooq bites in practice: Finnhub or
+  Twelve Data (both keyed, free tiers) — pending a UAE-accessibility check
+  from the phone.
+- Every fetcher returns null on failure → last cached price, marked stale;
+  nothing throws for network reasons.
 - Refresh on app open + pull-to-refresh; cache last price with timestamp.
 - Multi-account aware: same ticker held on eToro *and* IBKR = two positions
   under one asset, so "location of assets" is preserved.
@@ -78,10 +86,17 @@ native currency?**
 - Default maintenance time: ~10 hrs/month, editable.
 
 ### 3.3 Collectibles (Pokémon, art, graded cards)
-- Value via: (a) a collectibles pricing API where one exists
-  (e.g. PriceCharting / PSA-style graded lookups — verify at build time),
-  or (b) **screenshot import** from a collector app → vision model extracts
-  {item, grade, value}, or (c) manual VALUATION_MARK.
+- **Resolved (Stage 4): no API credibly prices sealed Japanese product** —
+  which is the bulk of the collection (Japanese Mega Evolution sealed sets).
+  So this class is **valuation marks + screenshot capture** (Stage 5), full
+  stop, and does not depend on any pricing API.
+- **Possible later enhancement, graded English singles only:** pokemonpricetracker
+  or PriceCharting can auto-refresh a *matched* graded/raw single. Wire it as
+  optional auto-refresh keyed on a stored external id, falling back to
+  marks/screenshot on any miss — never a hard dependency. Match-rate should be
+  measured (probe script) before leaning on it. Note: pokemonpricetracker
+  gates Japanese + sealed data to its paid tier and commercial use to $99/mo,
+  which matters only in the multi-user phase.
 - Graded vs sealed vs raw matters; store grade + grader (PSA/BGS/CGC).
 
 ---
@@ -218,6 +233,14 @@ for each flow's date. Surface the FX effect (`FX_loss`) as its own monetary
 taking one fixed rate is a Stage-3 stepping stone only — portfolio
 aggregation must use per-date rates.
 
+**FX provider (Stage 4, resolved):** fawazahmed0 exchange-api (keyless,
+no rate limits, 200+ currencies incl. AED/JPY, dated historical URLs),
+with the USD→AED central-bank peg (3.6725) hardcoded as last-resort
+fallback. Guard against inversion: assert a fetched USD→AED rate lands
+near the peg before trusting a series. It's a single community-maintained
+source — a second keyless FX source is a hardening item for the multi-user
+phase (JPY etc. have no fallback today; outages degrade to stale, not wrong).
+
 ---
 
 ## 9. Screens (MVP)
@@ -276,9 +299,17 @@ reliable.
 
 ---
 
-## 13. Open items to resolve at build time
-- Confirm global market-data provider (US equities, crypto, ETFs). ADX/DFM
-  out of scope.
-- Confirm collectibles pricing API availability (PriceCharting / PSA-style).
-- Choose speech-to-text provider (on-device vs cloud) — on-device favors
-  the local-first privacy stance.
+## 13. Provider decisions
+
+**Resolved (Stage 4):**
+- Equities/ETFs → Stooq EOD CSV (keyless). Crypto → CoinGecko public.
+- FX → fawazahmed0 exchange-api + USD→AED peg fallback, per-date historical.
+- Collectibles → no API for sealed Japanese product; marks + screenshot.
+  Graded English singles only are a possible later auto-refresh.
+
+**Still open:**
+- **Stooq UAE-accessibility** — verify from the phone before Stage 6; if it
+  geoblocks or the quota bites, swap to Finnhub / Twelve Data. Until then the
+  stale-cache path must be *visible* in the UI, not silent.
+- **Speech-to-text provider (Stage 5)** — on-device vs cloud; on-device
+  favors the local-first privacy stance.

@@ -77,6 +77,25 @@ const EXCHANGE_API_HOSTS = [
   (v: string, base: string) => `https://${v}.currency-api.pages.dev/v1/currencies/${base}.min.json`,
 ];
 
+/** The dirham peg: USD→AED has traded at 3.6725 since 1997. */
+const USD_AED_PEG = 3.6725;
+
+/**
+ * Inversion guard (spec §8 v5): a fetched USD→AED rate far from the peg
+ * means the series is inverted, mislabeled, or garbage — reject it rather
+ * than silently scaling every amount by ~3.67² . Non-pegged pairs can't be
+ * checked this cheaply and pass through.
+ */
+export function isPlausibleRate(base: string, quote: string, rate: number): boolean {
+  if (base.toUpperCase() === 'USD' && quote.toUpperCase() === 'AED') {
+    return Math.abs(rate - USD_AED_PEG) < 0.1;
+  }
+  if (base.toUpperCase() === 'AED' && quote.toUpperCase() === 'USD') {
+    return Math.abs(rate - 1 / USD_AED_PEG) < 0.01;
+  }
+  return rate > 0 && Number.isFinite(rate);
+}
+
 /**
  * Daily FX rate for one pair. `date` = ISO YYYY-MM-DD for a historical day,
  * or 'latest'. Tries the CDN, then the mirror.
@@ -91,7 +110,7 @@ export async function fetchFxRate(
     if (!res) continue;
     try {
       const parsed = parseExchangeApi(await res.json(), base, quote);
-      if (parsed) return parsed;
+      if (parsed && isPlausibleRate(base, quote, parsed.rate)) return parsed;
     } catch {
       // fall through to the next host
     }

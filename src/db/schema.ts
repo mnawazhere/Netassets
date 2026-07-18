@@ -112,9 +112,12 @@ export const valuationMarks = sqliteTable(
 export const imports = sqliteTable('imports', {
   id: text('id').primaryKey(),
   fileName: text('file_name').notNull(),
-  kind: text('kind', { enum: ['pdf', 'screenshot', 'voice'] }).notNull(),
+  kind: text('kind', { enum: ['pdf', 'csv', 'screenshot', 'voice'] }).notNull(),
   /** Broker/platform the statement came from (eToro…). */
   platform: text('platform'),
+  /** Account whose activity this statement covers — coverage windows are
+   *  matched per-account during dedup (spec §6). */
+  sourceAccount: text('source_account'),
   /** Statement coverage window — powers gap/overlap detection (spec §6). */
   periodStart: text('period_start'),
   periodEnd: text('period_end'),
@@ -159,6 +162,36 @@ export const priceCache = sqliteTable(
     asOf: text('as_of').notNull(),
   },
   (t) => [uniqueIndex('price_cache_symbol_uq').on(t.symbol, t.currency)]
+);
+
+/**
+ * Dedup review queue (spec §6): weak-key collisions and near-matches park
+ * here for one-tap keep / merge / discard — never silently dropped, never
+ * an uncaught DB throw. `payload` is the parsed-transaction JSON.
+ */
+export const reviewItems = sqliteTable(
+  'review_items',
+  {
+    id: text('id').primaryKey(),
+    importId: text('import_id')
+      .notNull()
+      .references(() => imports.id),
+    /** Resolved asset the incoming row points at. */
+    assetId: text('asset_id')
+      .notNull()
+      .references(() => assets.id),
+    /** JSON of the incoming ParsedTransaction awaiting a decision. */
+    payload: text('payload').notNull(),
+    reason: text('reason', { enum: ['weak-collision', 'near-match'] }).notNull(),
+    /** transactions.id of the existing row it collided/near-matched with. */
+    conflictsWith: text('conflicts_with'),
+    status: text('status', { enum: ['pending', 'kept', 'merged', 'discarded'] })
+      .notNull()
+      .default('pending'),
+    createdAt: text('created_at').notNull(),
+    resolvedAt: text('resolved_at'),
+  },
+  (t) => [index('review_items_status_idx').on(t.status)]
 );
 
 /** Audit trail (spec §7): every manually-set number writes a row here. */
