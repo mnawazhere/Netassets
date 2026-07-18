@@ -156,6 +156,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     currency: 'USD',
     priceMinor: toMinor('212.40', 'USD'),
     asOf: now,
+    fetchedAt: now,
   });
 
   // --- 2. Property: Reeman unit (AED), rent in, maintenance out, marked value ---

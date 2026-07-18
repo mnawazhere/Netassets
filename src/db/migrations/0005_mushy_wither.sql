@@ -1,0 +1,1 @@
+ALTER TABLE `price_cache` ADD `fetched_at` text DEFAULT '' NOT NULL;

@@ -162,7 +162,13 @@ export const priceCache = sqliteTable(
     symbol: text('symbol').notNull(),
     currency: text('currency').notNull(),
     priceMinor: integer('price_minor').notNull(),
+    /** The provider's quote timestamp — for Stooq EOD that's a market
+     *  DATE, hours in the past by design. Display only. */
     asOf: text('as_of').notNull(),
+    /** When WE last successfully fetched — the freshness signal. An EOD
+     *  quote fetched a minute ago is fresh; conflating this with asOf
+     *  made the stale banner fire on every successful refresh. */
+    fetchedAt: text('fetched_at').notNull().default(''),
   },
   (t) => [uniqueIndex('price_cache_symbol_uq').on(t.symbol, t.currency)]
 );

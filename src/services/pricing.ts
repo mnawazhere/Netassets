@@ -14,12 +14,13 @@ async function upsertPrice(
   db: Db,
   point: { symbol: string; currency: string; priceMinor: number; asOf: string }
 ): Promise<void> {
+  const fetchedAt = new Date().toISOString();
   await db
     .insert(priceCache)
-    .values({ id: uuid(), ...point })
+    .values({ id: uuid(), fetchedAt, ...point })
     .onConflictDoUpdate({
       target: [priceCache.symbol, priceCache.currency],
-      set: { priceMinor: point.priceMinor, asOf: point.asOf },
+      set: { priceMinor: point.priceMinor, asOf: point.asOf, fetchedAt },
     });
 }
 

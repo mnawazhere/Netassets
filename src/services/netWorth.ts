@@ -41,7 +41,11 @@ async function loadAssetView(db: Db, asset: AssetRow): Promise<AssetView> {
   if (isMarketPriced(asset.class) && asset.symbol) {
     const price = await cachedPrice(db, asset.symbol);
     if (!price) return { asset, valuation: null, locations: [], accountPositions: [], txns };
-    const fresh = Date.now() - new Date(price.asOf).getTime() < FRESH_WINDOW_MS;
+    // Freshness = when WE last fetched, not the quote's market date — an
+    // EOD quote fetched a minute ago is fresh (the banner used to lie here).
+    const fresh =
+      price.fetchedAt !== '' &&
+      Date.now() - new Date(price.fetchedAt).getTime() < FRESH_WINDOW_MS;
     const valuation = marketValuation(txns, price, { fresh });
     const positions = positionsByAccount(txns).filter((p) => p.quantity !== 0);
     const accountPositions = positions.map((p) => ({
