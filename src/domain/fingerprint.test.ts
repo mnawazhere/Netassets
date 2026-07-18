@@ -36,3 +36,33 @@ describe('fingerprint', () => {
     );
   });
 });
+
+describe('fingerprint with broker transaction ID (spec §6 v3)', () => {
+  it('prefers the broker ID: re-import of the same row matches', () => {
+    const first = fingerprint({ ...base, sourceTxnId: 'ETORO-778812' });
+    const reimport = fingerprint({ ...base, sourceTxnId: 'ETORO-778812' });
+    expect(reimport).toBe(first);
+  });
+
+  it('two identical same-day trades with different IDs do NOT collide', () => {
+    const fill1 = fingerprint({ ...base, sourceTxnId: 'ETORO-778812' });
+    const fill2 = fingerprint({ ...base, sourceTxnId: 'ETORO-778813' });
+    expect(fill2).not.toBe(fill1);
+  });
+
+  it('ID-keyed fingerprint ignores amount/date noise (rounding diffs on re-export)', () => {
+    const a = fingerprint({ ...base, sourceTxnId: 'X1' });
+    const b = fingerprint({ ...base, sourceTxnId: 'X1', amountMinor: -123457, date: '2025-03-16' });
+    expect(b).toBe(a);
+  });
+
+  it('same ID on different accounts stays distinct', () => {
+    const a = fingerprint({ ...base, sourceTxnId: 'X1', sourceAccount: 'etoro' });
+    const b = fingerprint({ ...base, sourceTxnId: 'X1', sourceAccount: 'ibkr' });
+    expect(b).not.toBe(a);
+  });
+
+  it('identical ID-less trades still collide (routed to review, not dropped)', () => {
+    expect(fingerprint({ ...base })).toBe(fingerprint({ ...base }));
+  });
+});

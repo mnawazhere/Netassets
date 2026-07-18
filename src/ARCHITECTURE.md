@@ -16,3 +16,11 @@ not a rewrite.
 
 Dependency direction points downward in this table — `domain/` never imports
 from `db/`; screens never touch sqlite directly.
+
+## Cost-basis lots are derived, not stored
+
+There is no `lots` table (spec §6 v3). Lots derive from BUY/SELL
+transactions — single source of truth — so a re-import that dedups a
+transaction can never leave a duplicated lot double-counting cost basis.
+Convention: BUY/SELL `amount_minor` = quantity × unit price only; fees are
+separate FEE transactions.

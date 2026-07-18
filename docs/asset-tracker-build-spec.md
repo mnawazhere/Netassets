@@ -156,12 +156,25 @@ Three capture paths, all converging on structured Transactions:
    speech-to-text → LLM → structured transaction.
 
 ### Idempotent dedup (the "don't double-add" requirement)
-- Each parsed transaction gets a **fingerprint** =
-  hash(asset_id + date + type + quantity + amount + source_account).
-- **Exact fingerprint match → auto-skip silently.** Re-importing the same
-  PDF is a no-op.
-- **Near-match** (overlapping statement window, rounding diffs) → queue for
-  **one-tap review** (keep / merge / discard). Never silently drop or dupe.
+- Each parsed transaction gets a **fingerprint**:
+  - **If the statement provides a broker/order transaction ID, use it**
+    (`hash(asset_id + source_account + source_txn_id)`). This is the only
+    reliable idempotency key — it survives re-imports AND keeps two
+    genuinely identical trades distinct.
+  - **Fallback (no ID):** `hash(asset_id + date + type + quantity +
+    amount + source_account)`. This CANNOT distinguish a re-import from two
+    real identical same-day trades, so on collision it must NOT hard-fail —
+    route to the review queue below.
+- **Exact match → auto-skip silently.** Re-importing the same PDF is a no-op.
+  The import path catches the unique-index violation and skips gracefully;
+  a duplicate fingerprint must never surface as an uncaught DB throw.
+- **Near-match / ambiguous collision** (overlapping window, rounding diffs,
+  ID-less identical trades) → queue for **one-tap review**
+  (keep / merge / discard). Never silently drop or dupe.
+- **Lots must be idempotent on re-import too.** Derive cost-basis lots from
+  BUY/SELL transactions (single source of truth), or give `lots` its own
+  dedup key — otherwise a re-import skips the transaction but duplicates the
+  lot and double-counts cost basis.
 - Every transaction stores `source_ref` (which file/import produced it).
 - Every imported **statement** stores its date range, so the engine knows
   which periods are already covered and flags gaps/overlaps.

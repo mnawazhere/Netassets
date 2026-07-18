@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import type { Db } from '@/db/client';
-import { lots, transactions, valuationMarks, type ChangeSource } from '@/db/schema';
+import { transactions, valuationMarks, type ChangeSource } from '@/db/schema';
 import { fingerprint } from '@/domain/fingerprint';
 import { nowISO, uuid } from '@/lib/uuid';
 
@@ -33,6 +33,7 @@ export async function insertTransaction(
       quantity: values.quantity,
       amountMinor: values.amountMinor,
       sourceAccount: values.sourceAccount,
+      sourceTxnId: values.sourceTxnId,
     }),
     ...values,
   });
@@ -46,14 +47,6 @@ export async function insertTransaction(
       source,
     });
   }
-  return id;
-}
-
-type NewLot = Omit<typeof lots.$inferInsert, 'id' | 'createdAt'>;
-
-export async function insertLot(db: Db, values: NewLot): Promise<string> {
-  const id = uuid();
-  await db.insert(lots).values({ id, createdAt: nowISO(), ...values });
   return id;
 }
 
@@ -95,6 +88,7 @@ export async function updateTransactionAmount(
         quantity: existing.quantity,
         amountMinor,
         sourceAccount: existing.sourceAccount,
+        sourceTxnId: existing.sourceTxnId,
       }),
     })
     .where(eq(transactions.id, id));

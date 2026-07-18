@@ -1,6 +1,15 @@
 /**
- * Transaction fingerprint for idempotent dedup (spec §6):
- *   fingerprint = hash(asset_id + date + type + quantity + amount + source_account)
+ * Transaction fingerprint for idempotent dedup (spec §6 v3).
+ *
+ * Two keys, in preference order:
+ * 1. Broker/order ID when the statement provides one:
+ *      hash(asset_id + source_account + source_txn_id)
+ *    The only reliable idempotency key — survives re-imports AND keeps two
+ *    genuinely identical same-day trades distinct.
+ * 2. Fallback (no ID):
+ *      hash(asset_id + date + type + quantity + amount + source_account)
+ *    Cannot distinguish a re-import from two real identical trades, so a
+ *    collision on this key must route to the review queue, never hard-fail.
  *
  * Asset resolution runs BEFORE fingerprinting — the asset_id here must be
  * the resolved asset, or re-imports would mint new assets and never dedup.
@@ -17,6 +26,8 @@ export interface FingerprintInput {
   quantity: number | null | undefined;
   amountMinor: number;
   sourceAccount: string | null | undefined;
+  /** Broker/order transaction ID from the statement, when provided. */
+  sourceTxnId?: string | null;
 }
 
 const FNV_OFFSET = 0xcbf29ce484222325n;
@@ -33,6 +44,9 @@ function fnv1a64(input: string): string {
 }
 
 export function canonicalFingerprintString(t: FingerprintInput): string {
+  if (t.sourceTxnId) {
+    return ['id', t.assetId, t.sourceAccount ?? '', t.sourceTxnId].join('|');
+  }
   return [
     t.assetId,
     t.date,
@@ -45,4 +59,10 @@ export function canonicalFingerprintString(t: FingerprintInput): string {
 
 export function fingerprint(t: FingerprintInput): string {
   return fnv1a64(canonicalFingerprintString(t));
+}
+
+/** True when this fingerprint is the weak (no broker ID) variant — a
+ *  collision on it is ambiguous and belongs in the review queue. */
+export function isFallbackFingerprint(t: FingerprintInput): boolean {
+  return !t.sourceTxnId;
 }

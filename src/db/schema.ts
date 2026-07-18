@@ -51,26 +51,13 @@ export const assets = sqliteTable(
   (t) => [index('assets_class_idx').on(t.class), index('assets_platform_idx').on(t.platform)]
 );
 
-export const lots = sqliteTable(
-  'lots',
-  {
-    id: text('id').primaryKey(),
-    assetId: text('asset_id')
-      .notNull()
-      .references(() => assets.id),
-    quantity: real('quantity').notNull(),
-    /** Per-unit price, minor units of `currency`. */
-    unitPriceMinor: integer('unit_price_minor').notNull(),
-    feesMinor: integer('fees_minor').notNull().default(0),
-    currency: text('currency').notNull(),
-    date: text('date').notNull(),
-    /** Which import/file produced this lot (null = manual). */
-    sourceRef: text('source_ref'),
-    createdAt: text('created_at').notNull(),
-  },
-  (t) => [index('lots_asset_idx').on(t.assetId)]
-);
-
+/*
+ * NOTE: there is deliberately NO stored `lots` table (spec §6 v3). Cost-basis
+ * lots are DERIVED from BUY/SELL transactions — a single source of truth —
+ * so a re-imported statement that dedups a transaction can never leave a
+ * duplicated lot double-counting cost basis. Convention: BUY/SELL
+ * `amount_minor` is quantity × unit price only; fees are separate FEE rows.
+ */
 export const transactions = sqliteTable(
   'transactions',
   {
@@ -88,9 +75,13 @@ export const transactions = sqliteTable(
     hoursSpent: real('hours_spent').notNull().default(0),
     /** Account/platform the row came from — part of the dedup fingerprint. */
     sourceAccount: text('source_account'),
+    /** Broker/order transaction ID from the statement, when provided — the
+     *  only reliable idempotency key (spec §6 v3). */
+    sourceTxnId: text('source_txn_id'),
     /** imports.id that produced this row (null = manual/voice). */
     sourceRef: text('source_ref'),
-    /** hash(asset_id+date+type+quantity+amount+source_account) — dedup key. */
+    /** Dedup key: hash(asset+account+source_txn_id) when the broker gave us
+     *  an ID, else hash(asset+date+type+quantity+amount+account). */
     fingerprint: text('fingerprint').notNull(),
     note: text('note'),
     createdAt: text('created_at').notNull(),

@@ -3,6 +3,12 @@
  * has real rows to work against: a multi-lot US equity (USD, imported), a
  * rental property (AED, manual/voice), and a sealed collectible (JPY —
  * 0-decimal currency on purpose).
+ *
+ * Conventions (spec §6 v3):
+ * - No stored lots — cost basis derives from BUY/SELL transactions.
+ * - BUY/SELL amount = quantity × unit price ONLY; fees are separate FEE
+ *   rows (so fees never double-count between cost basis and money costs).
+ * - Imported rows carry the broker's transaction ID (source_txn_id).
  */
 import { fxRates, imports, priceCache } from '@/db/schema';
 import type { Db } from '@/db/client';
@@ -10,11 +16,7 @@ import { toMinor } from '@/domain/money';
 import { nowISO, uuid } from '@/lib/uuid';
 import { createAsset, listAssets } from '@/repositories/assets';
 import { SETTING_KEYS, setSetting } from '@/repositories/settings';
-import {
-  insertLot,
-  insertTransaction,
-  insertValuationMark,
-} from '@/repositories/transactions';
+import { insertTransaction, insertValuationMark } from '@/repositories/transactions';
 
 export async function seedIfEmpty(db: Db): Promise<void> {
   const existing = await listAssets(db);
@@ -33,7 +35,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     { id: uuid(), base: 'JPY', quote: 'AED', rate: 0.0239, asOf: now },
   ]);
 
-  // --- 1. Equity: AAPL on eToro (USD), two lots, one dividend, imported ---
+  // --- 1. Equity: AAPL on eToro (USD), two buys, one dividend, imported ---
   const importId = uuid();
   await db.insert(imports).values({
     id: importId,
@@ -53,36 +55,34 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     currency: 'USD',
     symbol: 'AAPL',
   });
-  await insertLot(db, {
-    assetId: aapl,
-    quantity: 10,
-    unitPriceMinor: toMinor('185.30', 'USD'),
-    feesMinor: toMinor('1.50', 'USD'),
-    currency: 'USD',
-    date: '2025-01-15',
-    sourceRef: importId,
-  });
-  await insertLot(db, {
-    assetId: aapl,
-    quantity: 5,
-    unitPriceMinor: toMinor('201.10', 'USD'),
-    feesMinor: toMinor('1.50', 'USD'),
-    currency: 'USD',
-    date: '2025-04-02',
-    sourceRef: importId,
-  });
+  const etoro = { sourceAccount: 'etoro', sourceRef: importId };
   await insertTransaction(
     db,
     {
       assetId: aapl,
       type: 'BUY',
       date: '2025-01-15',
-      amountMinor: -toMinor('1854.50', 'USD'), // 10 × 185.30 + 1.50 fee
+      amountMinor: -toMinor('1853.00', 'USD'), // 10 × 185.30
       currency: 'USD',
       quantity: 10,
       hoursSpent: 0.1,
-      sourceAccount: 'etoro',
-      sourceRef: importId,
+      sourceTxnId: 'ETORO-1001001',
+      ...etoro,
+    },
+    'import'
+  );
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'FEE',
+      date: '2025-01-15',
+      amountMinor: -toMinor('1.50', 'USD'),
+      currency: 'USD',
+      quantity: null,
+      hoursSpent: 0,
+      sourceTxnId: 'ETORO-1001001-FEE',
+      ...etoro,
     },
     'import'
   );
@@ -92,12 +92,27 @@ export async function seedIfEmpty(db: Db): Promise<void> {
       assetId: aapl,
       type: 'BUY',
       date: '2025-04-02',
-      amountMinor: -toMinor('1007.00', 'USD'), // 5 × 201.10 + 1.50 fee
+      amountMinor: -toMinor('1005.50', 'USD'), // 5 × 201.10
       currency: 'USD',
       quantity: 5,
       hoursSpent: 0.1,
-      sourceAccount: 'etoro',
-      sourceRef: importId,
+      sourceTxnId: 'ETORO-1002002',
+      ...etoro,
+    },
+    'import'
+  );
+  await insertTransaction(
+    db,
+    {
+      assetId: aapl,
+      type: 'FEE',
+      date: '2025-04-02',
+      amountMinor: -toMinor('1.50', 'USD'),
+      currency: 'USD',
+      quantity: null,
+      hoursSpent: 0,
+      sourceTxnId: 'ETORO-1002002-FEE',
+      ...etoro,
     },
     'import'
   );
@@ -111,8 +126,8 @@ export async function seedIfEmpty(db: Db): Promise<void> {
       currency: 'USD',
       quantity: null,
       hoursSpent: 0,
-      sourceAccount: 'etoro',
-      sourceRef: importId,
+      sourceTxnId: 'ETORO-1003003',
+      ...etoro,
     },
     'import'
   );
@@ -131,27 +146,33 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     platform: 'Al Reeman',
     currency: 'AED',
   });
-  await insertLot(db, {
-    assetId: reeman,
-    quantity: 1,
-    unitPriceMinor: toMinor('1450000', 'AED'),
-    feesMinor: toMinor('29000', 'AED'), // 2% transfer fee
-    currency: 'AED',
-    date: '2024-06-01',
-    sourceRef: null,
-  });
+  const manual = { sourceAccount: null, sourceTxnId: null, sourceRef: null };
   await insertTransaction(
     db,
     {
       assetId: reeman,
       type: 'BUY',
       date: '2024-06-01',
-      amountMinor: -toMinor('1479000', 'AED'),
+      amountMinor: -toMinor('1450000', 'AED'),
       currency: 'AED',
       quantity: 1,
       hoursSpent: 40,
-      sourceAccount: null,
-      sourceRef: null,
+      ...manual,
+    },
+    'manual'
+  );
+  await insertTransaction(
+    db,
+    {
+      assetId: reeman,
+      type: 'FEE',
+      date: '2024-06-01',
+      amountMinor: -toMinor('29000', 'AED'), // 2% transfer fee
+      currency: 'AED',
+      quantity: null,
+      hoursSpent: 0,
+      note: 'Transfer fee',
+      ...manual,
     },
     'manual'
   );
@@ -166,8 +187,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
         currency: 'AED',
         quantity: null,
         hoursSpent: 10, // default property maintenance time (spec §4)
-        sourceAccount: null,
-        sourceRef: null,
+        ...manual,
       },
       'voice'
     );
@@ -182,8 +202,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
       currency: 'AED',
       quantity: null,
       hoursSpent: 4,
-      sourceAccount: null,
-      sourceRef: null,
+      ...manual,
     },
     'manual'
   );
@@ -211,15 +230,6 @@ export async function seedIfEmpty(db: Db): Promise<void> {
     platform: 'Home safe',
     currency: 'JPY',
   });
-  await insertLot(db, {
-    assetId: pokemon,
-    quantity: 1,
-    unitPriceMinor: toMinor('5800', 'JPY'),
-    feesMinor: 0,
-    currency: 'JPY',
-    date: '2023-09-22',
-    sourceRef: null,
-  });
   await insertTransaction(
     db,
     {
@@ -230,8 +240,7 @@ export async function seedIfEmpty(db: Db): Promise<void> {
       currency: 'JPY',
       quantity: 1,
       hoursSpent: 5, // 4 hrs in line + 1 hr travel (spec §4)
-      sourceAccount: null,
-      sourceRef: null,
+      ...manual,
     },
     'manual'
   );
