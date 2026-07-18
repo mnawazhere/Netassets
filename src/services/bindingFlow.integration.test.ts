@@ -159,7 +159,7 @@ describe('7B-3 acceptance — dominant import matches ride the same gate', () =>
     await runImport(
       db,
       { fileName: 'fuzzy.csv', kind: 'csv', sourceAccount: 'etoro', rows: [fuzzyRow] },
-      { testFetch: async () => 41200 }
+      { testFetch: async () => 41200, refreshPrice: async () => false }
     );
 
     const [asset] = await db.select().from(schema.assets);
@@ -180,7 +180,7 @@ describe('7B-3 acceptance — dominant import matches ride the same gate', () =>
     await runImport(
       db,
       { fileName: 'fuzzy.csv', kind: 'csv', sourceAccount: 'etoro', rows: [fuzzyRow] },
-      { testFetch: async () => 41200 }
+      { testFetch: async () => 41200, refreshPrice: async () => false }
     );
     const pending = await pendingReviews(db);
     await resolveReview(db, pending[0].id, 'discarded');
@@ -193,7 +193,7 @@ describe('7B-3 acceptance — dominant import matches ride the same gate', () =>
     await runImport(
       db,
       { fileName: 'fuzzy.csv', kind: 'csv', sourceAccount: 'etoro', rows: [fuzzyRow] },
-      { testFetch: async () => null }
+      { testFetch: async () => null, refreshPrice: async () => false }
     );
     expect(await pendingReviews(db)).toHaveLength(0);
     const [asset] = await db.select().from(schema.assets);

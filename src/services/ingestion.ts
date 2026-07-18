@@ -23,6 +23,7 @@ import { loadCacheLookup, saveMapping } from '@/repositories/symbolMappings';
 import { insertTransaction } from '@/repositories/transactions';
 
 import { liveTestFetch, verifyCandidate, type TestFetch } from './bindingFlow';
+import { refreshPriceFor } from './pricing';
 import { bindHint } from './resolution';
 
 export interface ImportRequest {
@@ -46,14 +47,17 @@ export interface ImportSummary {
 
 export interface ImportDeps {
   /** Gate 1 for dominant binding hypotheses found during import. */
-  testFetch: TestFetch;
+  testFetch?: TestFetch;
+  /** Prices newly created bound assets; injectable for hermetic tests. */
+  refreshPrice?: typeof refreshPriceFor;
 }
 
 export async function runImport(
   db: Db,
   req: ImportRequest,
-  deps: ImportDeps = { testFetch: liveTestFetch }
+  depsIn: ImportDeps = {}
 ): Promise<ImportSummary> {
+  const deps = { testFetch: liveTestFetch, refreshPrice: refreshPriceFor, ...depsIn };
   // Coverage context from prior processed statements.
   const prior = await db.select().from(imports).where(eq(imports.status, 'processed'));
   const coveredRanges: CoveredRange[] = prior
@@ -123,6 +127,8 @@ export async function runImport(
           'index',
           row.asset.symbol ?? row.asset.name ?? undefined
         );
+        // Price it now so the asset isn't valueless until next app open.
+        await deps.refreshPrice(db, resolution.asset);
       } else if (dominantCandidate) {
         const gate = await verifyCandidate(dominantCandidate, {
           testFetch: deps.testFetch,

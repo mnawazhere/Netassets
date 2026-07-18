@@ -87,6 +87,7 @@ export interface PortfolioView {
     name: string;
     class: string;
     currency: string;
+    providerId: string | null;
     valuation: Valuation | null;
     accountPositions: AssetView['accountPositions'];
     breakdown: BaseReturnBreakdown | null;
@@ -144,6 +145,7 @@ export async function computePortfolioView(db: Db, today: string): Promise<Portf
       name: asset.name,
       class: asset.class,
       currency: asset.currency,
+      providerId: asset.providerId,
       valuation: view.valuation,
       accountPositions: view.accountPositions,
       breakdown,

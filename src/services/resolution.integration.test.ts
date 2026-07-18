@@ -85,13 +85,11 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
     expect(manual.bound).toBe(true);
 
     // CSV import of an eToro MSFT row — the other entry path.
-    const summary = await runImport(db, {
-      fileName: 'etoro.csv',
-      kind: 'csv',
-      platform: 'eToro',
-      sourceAccount: 'etoro',
-      rows: [msftCsvRow],
-    });
+    const summary = await runImport(
+      db,
+      { fileName: 'etoro.csv', kind: 'csv', platform: 'eToro', sourceAccount: 'etoro', rows: [msftCsvRow] },
+      { refreshPrice: async () => false }
+    );
     expect(summary.assetsCreated).toBe(0); // resolved to the existing asset
 
     const assets = await db.select().from(schema.assets);
@@ -108,12 +106,11 @@ describe('7B-2 acceptance — one security, one asset, one providerId', () => {
   });
 
   it('order-independent: CSV first, then hand-added "Microsoft" → still one asset', async () => {
-    await runImport(db, {
-      fileName: 'etoro.csv',
-      kind: 'csv',
-      sourceAccount: 'etoro',
-      rows: [msftCsvRow],
-    });
+    await runImport(
+      db,
+      { fileName: 'etoro.csv', kind: 'csv', sourceAccount: 'etoro', rows: [msftCsvRow] },
+      { refreshPrice: async () => false }
+    );
     const manual = await ensureAsset(db, {
       name: 'microsoft', // lowercase on purpose
       symbol: null,

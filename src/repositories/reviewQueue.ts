@@ -100,7 +100,7 @@ export async function resolveReview(
     if (decision === 'merged') throw new Error('merge does not apply to a binding confirmation');
     if (decision === 'kept') {
       const payload = JSON.parse(item.payload) as BindingReviewPayload;
-      await applyConfirmedBinding(db, item.assetId, payload.candidate);
+      await applyConfirmedBinding(db, item.assetId, payload.candidate, payload.fetchedPriceMinor);
     }
     await db
       .update(reviewItems)

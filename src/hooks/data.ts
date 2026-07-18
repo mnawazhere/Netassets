@@ -16,6 +16,7 @@ import { changesFor } from '@/repositories/changeLog';
 import { listAssets, valuationMarksFor } from '@/repositories/assets';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
+import { primePrice, refreshPriceFor } from '@/services/pricing';
 import { ensureAsset } from '@/services/resolution';
 import { getAnthropicKey, setAnthropicKey } from '@/services/secureKeys';
 import { pendingReviews, resolveReview } from '@/repositories/reviewQueue';
@@ -194,6 +195,24 @@ export async function submitManualTransaction(
         return { ok: false, reason: 'Binding needs confirmation' };
       }
       assetId = ensured.assetId;
+
+      // Price the new asset NOW, not on the next app open — a bound
+      // market asset must never sit valueless on its detail screen.
+      if (hint.providerId && hint.symbol) {
+        if (bindingDecision?.accepted) {
+          await primePrice(db, {
+            symbol: hint.symbol,
+            currency: hint.currency,
+            priceMinor: bindingDecision.pending.fetchedPriceMinor,
+          });
+        } else {
+          await refreshPriceFor(db, {
+            class: hint.class,
+            symbol: hint.symbol,
+            providerId: hint.providerId,
+          }); // offline → stays unvalued until refresh; never throws
+        }
+      }
     }
     const magnitude = Math.abs(toMinor(entry.amount, entry.currency));
     await insertTransaction(

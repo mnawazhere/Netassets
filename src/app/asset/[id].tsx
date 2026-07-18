@@ -64,7 +64,13 @@ export default function AssetDetailScreen() {
               <Text variant="muted" className="mt-1">
                 as of {shortDate(entry.valuation.asOf)}
               </Text>
-            ) : null}
+            ) : (
+              <Text variant="muted" className="mt-1">
+                {entry.providerId
+                  ? 'no price yet — pull to refresh on the dashboard'
+                  : 'unpriced — tracked without auto-pricing (set a valuation mark, or bind a symbol)'}
+              </Text>
+            )}
           </CardContent>
         </Card>
 

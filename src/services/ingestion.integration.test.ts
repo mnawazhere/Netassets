@@ -60,6 +60,8 @@ function etoroRequest(): ImportRequest {
   };
 }
 
+const hermetic = { refreshPrice: async () => false };
+
 async function snapshot(db: Db) {
   const txns = await db.select().from(schema.transactions);
   const assets = await db.select().from(schema.assets);
@@ -77,7 +79,7 @@ describe('runImport — end-to-end idempotency', () => {
   });
 
   it('imports a fresh eToro statement: one asset, four transactions', async () => {
-    const summary = await runImport(db, etoroRequest());
+    const summary = await runImport(db, etoroRequest(), hermetic);
     expect(summary).toMatchObject({
       inserted: 4,
       skippedExact: 0,
@@ -87,10 +89,10 @@ describe('runImport — end-to-end idempotency', () => {
   });
 
   it('THE test: re-importing the identical file changes NOTHING', async () => {
-    await runImport(db, etoroRequest());
+    await runImport(db, etoroRequest(), hermetic);
     const before = await snapshot(db);
 
-    const second = await runImport(db, etoroRequest());
+    const second = await runImport(db, etoroRequest(), hermetic);
 
     expect(second.inserted).toBe(0);
     expect(second.skippedExact).toBe(4); // strong keys: silent no-op
@@ -103,10 +105,10 @@ describe('runImport — end-to-end idempotency', () => {
   it('ID-less rows: re-import inside the covered window skips silently', async () => {
     const rows = parseEtoroCsv(ETORO_CSV).transactions.map((t) => ({ ...t, sourceTxnId: null }));
     const req = { ...etoroRequest(), rows };
-    await runImport(db, req);
+    await runImport(db, req, hermetic);
     const before = await snapshot(db);
 
-    const second = await runImport(db, req);
+    const second = await runImport(db, req, hermetic);
     expect(second.inserted).toBe(0);
     expect(second.skippedExact).toBe(4);
     expect(second.queuedForReview).toBe(0);
@@ -125,8 +127,8 @@ describe('runImport — end-to-end idempotency', () => {
       sourceTxnId: null,
     };
     // Two voice-captured identical buys, no statement window either time.
-    await runImport(db, { fileName: 'voice-1', kind: 'voice', sourceAccount: 'etoro', rows: [buy] });
-    const second = await runImport(db, { fileName: 'voice-2', kind: 'voice', sourceAccount: 'etoro', rows: [buy] });
+    await runImport(db, { fileName: 'voice-1', kind: 'voice', sourceAccount: 'etoro', rows: [buy] }, hermetic);
+    const second = await runImport(db, { fileName: 'voice-2', kind: 'voice', sourceAccount: 'etoro', rows: [buy] }, hermetic);
 
     expect(second.inserted).toBe(0);
     expect(second.queuedForReview).toBe(1);
@@ -144,7 +146,7 @@ describe('runImport — end-to-end idempotency', () => {
 
   it('rounding diff between exports → near-match review; merge fixes in place', async () => {
     const base = etoroRequest();
-    await runImport(db, base);
+    await runImport(db, base, hermetic);
 
     const rounded = parseEtoroCsv(ETORO_CSV).transactions.map((t) => ({
       ...t,
@@ -152,7 +154,7 @@ describe('runImport — end-to-end idempotency', () => {
       amountMinor: t.amountMinor + (t.type === 'BUY' && t.date === '2025-01-15' ? -1 : 0),
     }));
     // Only the changed row survives dedup scrutiny; the identical ones skip via coverage.
-    const second = await runImport(db, { ...base, fileName: 're-export.csv', rows: rounded });
+    const second = await runImport(db, { ...base, fileName: 're-export.csv', rows: rounded }, hermetic);
     expect(second.queuedForReview).toBe(1);
 
     const pending = await pendingReviews(db);

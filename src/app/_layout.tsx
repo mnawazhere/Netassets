@@ -23,7 +23,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: dark ? NAVY_DARK_BG : '#ffffff' },
         }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="asset/[id]" options={{ title: 'Asset' }} />
+        <Stack.Screen name="asset/[id]" options={{ title: 'Asset', headerBackTitle: 'Back' }} />
       </Stack>
     </DatabaseProvider>
   );

@@ -19,6 +19,8 @@ import { assets } from '@/db/schema';
 import { createAsset, listAssets } from '@/repositories/assets';
 import { loadCacheLookup, saveMapping } from '@/repositories/symbolMappings';
 
+import { primePrice } from './pricing';
+
 type AssetHint = ParsedTransaction['asset'];
 const MARKET = new Set(['EQUITY', 'CRYPTO', 'ETF']);
 
@@ -166,11 +168,14 @@ export async function ensureAsset(
  * Apply a GATE-PASSED binding (bound state only) to an existing asset —
  * canonical name/symbol/providerId — and teach the cache every key that
  * led here. This is the single write path for confirmed hypotheses.
+ * When the gate's test-fetch price is provided, it primes price_cache so
+ * the asset is valued immediately (no second fetch, no valueless view).
  */
 export async function applyConfirmedBinding(
   db: Db,
   assetId: string,
-  candidate: BindingCandidate
+  candidate: BindingCandidate,
+  fetchedPriceMinor?: number
 ): Promise<void> {
   const { binding } = candidate;
   await db
@@ -188,4 +193,11 @@ export async function applyConfirmedBinding(
     candidate.origin === 'ai' ? 'ai' : 'index',
     candidate.forQuery
   );
+  if (fetchedPriceMinor !== undefined && fetchedPriceMinor > 0) {
+    await primePrice(db, {
+      symbol: binding.symbol,
+      currency: binding.currency,
+      priceMinor: fetchedPriceMinor,
+    });
+  }
 }
