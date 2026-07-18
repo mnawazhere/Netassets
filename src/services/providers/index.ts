@@ -14,36 +14,69 @@
  */
 import type { PricePoint } from '@/adapters/types';
 
-import { parseCoinGecko, parseExchangeApi, parseStooqCsv } from './parsers';
+import { parseCoinGecko, parseExchangeApi, parseStooqCsv, parseYahooChart } from './parsers';
 
 const FETCH_TIMEOUT_MS = 10_000;
 
 async function fetchWithTimeout(url: string): Promise<Response | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
     const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
     return res.ok ? res : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer); // a throwing fetch must not leave a live timer
+  }
+}
+
+async function fetchStooqEquity(
+  symbol: string,
+  stooqId: string
+): Promise<PricePoint | null> {
+  const res = await fetchWithTimeout(
+    `https://stooq.com/q/l/?s=${encodeURIComponent(stooqId)}&f=sd2t2ohlcv&h&e=csv`
+  );
+  if (!res) return null;
+  try {
+    const parsed = parseStooqCsv(await res.text(), 'USD');
+    if (!parsed) return null;
+    return { symbol: symbol.toUpperCase(), currency: 'USD', priceMinor: parsed.priceMinor, asOf: parsed.date };
   } catch {
     return null;
   }
 }
 
-/** US equities / ETFs via Stooq EOD. `providerId` is the Stooq id
- *  (`aapl.us`); when absent, derived from the plain ticker. */
+async function fetchYahooEquity(
+  symbol: string,
+  stooqId: string
+): Promise<PricePoint | null> {
+  // Yahoo uses the dash form Stooq does (BRK-B), minus the '.us' suffix.
+  const ySymbol = stooqId.replace(/\.us$/, '').toUpperCase();
+  const res = await fetchWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=1d&range=1d`
+  );
+  if (!res) return null;
+  try {
+    const parsed = parseYahooChart(await res.json());
+    if (!parsed) return null;
+    return { symbol: symbol.toUpperCase(), currency: parsed.currency, priceMinor: parsed.priceMinor, asOf: parsed.asOf };
+  } catch {
+    return null;
+  }
+}
+
+/** US equities / ETFs: Stooq EOD first, Yahoo chart as keyless fallback —
+ *  one dead endpoint must degrade to the next source, not to a dash.
+ *  `providerId` is the Stooq id (`aapl.us`); derived from the ticker when
+ *  absent. */
 export async function fetchEquityPrice(
   symbol: string,
   providerId?: string | null
 ): Promise<PricePoint | null> {
   const stooqId = providerId ?? `${symbol.toLowerCase().replace(/\./g, '-')}.us`;
-  const res = await fetchWithTimeout(
-    `https://stooq.com/q/l/?s=${encodeURIComponent(stooqId)}&f=sd2t2ohlcv&h&e=csv`
-  );
-  if (!res) return null;
-  const parsed = parseStooqCsv(await res.text(), 'USD');
-  if (!parsed) return null;
-  return { symbol: symbol.toUpperCase(), currency: 'USD', priceMinor: parsed.priceMinor, asOf: parsed.date };
+  return (await fetchStooqEquity(symbol, stooqId)) ?? (await fetchYahooEquity(symbol, stooqId));
 }
 
 /** Ticker → CoinGecko id for the majors; extend as holdings appear. */

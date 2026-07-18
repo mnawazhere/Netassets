@@ -45,6 +45,33 @@ export function parseCoinGecko(
 }
 
 /**
+ * Yahoo Finance v8 chart endpoint
+ * (`query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1d&range=1d`):
+ *   { "chart": { "result": [ { "meta": {
+ *       "currency": "USD", "regularMarketPrice": 329.65,
+ *       "regularMarketTime": 1752861600, ... } } ] } }
+ * Keyless equity fallback for when Stooq's CSV endpoint is unreachable.
+ */
+export function parseYahooChart(
+  json: unknown
+): { priceMinor: number; currency: string; asOf: string } | null {
+  const meta = (
+    json as { chart?: { result?: Array<{ meta?: Record<string, unknown> }> } } | null
+  )?.chart?.result?.[0]?.meta;
+  const price = meta?.regularMarketPrice;
+  const currency = typeof meta?.currency === 'string' ? meta.currency : 'USD';
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) return null;
+  const ts = meta?.regularMarketTime;
+  const asOf =
+    typeof ts === 'number' ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+  try {
+    return { priceMinor: toMinor(price, currency), currency: currency.toUpperCase(), asOf };
+  } catch {
+    return null; // unknown currency code — refuse rather than misprice
+  }
+}
+
+/**
  * fawazahmed0 exchange-api (`.../v1/currencies/usd.min.json`):
  *   { "date": "2025-07-17", "usd": { "aed": 3.6725, "jpy": 148.61, ... } }
  */

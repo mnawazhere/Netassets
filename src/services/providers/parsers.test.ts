@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { parseCoinGecko, parseExchangeApi, parseStooqCsv } from './parsers';
+import { parseCoinGecko, parseExchangeApi, parseStooqCsv, parseYahooChart } from './parsers';
 
 describe('parseStooqCsv', () => {
   const good = 'Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL.US,2025-07-17,22:00:11,210.1,213.5,209.8,212.4,48123456\n';
@@ -37,6 +37,37 @@ describe('parseCoinGecko', () => {
 
   it('missing id → null', () => {
     expect(parseCoinGecko({}, 'bitcoin', 'USD')).toBeNull();
+  });
+});
+
+describe('parseYahooChart', () => {
+  const good = {
+    chart: {
+      result: [
+        { meta: { currency: 'USD', regularMarketPrice: 329.65, regularMarketTime: 1752861600 } },
+      ],
+    },
+  };
+
+  it('parses price, currency, and timestamp', () => {
+    const r = parseYahooChart(good);
+    expect(r).not.toBeNull();
+    expect(r!.priceMinor).toBe(32965);
+    expect(r!.currency).toBe('USD');
+    expect(r!.asOf).toBe(new Date(1752861600 * 1000).toISOString());
+  });
+
+  it('missing/invalid price → null', () => {
+    expect(parseYahooChart({ chart: { result: [{ meta: { currency: 'USD' } }] } })).toBeNull();
+    expect(parseYahooChart({ chart: { result: [] } })).toBeNull();
+    expect(parseYahooChart(null)).toBeNull();
+    expect(parseYahooChart('an html error page')).toBeNull();
+  });
+
+  it('unknown currency code refuses rather than mispricing', () => {
+    expect(
+      parseYahooChart({ chart: { result: [{ meta: { currency: 'ZZZ', regularMarketPrice: 5 } }] } })
+    ).toBeNull();
   });
 });
 
