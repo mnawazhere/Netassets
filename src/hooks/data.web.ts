@@ -183,8 +183,11 @@ export function useSettingsData() {
       timestamp: string;
       source: string;
     }[],
+    salaryMonthly: '',
+    expensesMonthly: '',
     saveHourlyRate: async (_v: string) => {},
     saveBaseCurrency: async (_v: string) => {},
     saveTimeDefault: async (_c: string, _h: string) => {},
+    saveMonthlyFigure: async (_w: 'salary' | 'expenses', _a: string) => {},
   };
 }

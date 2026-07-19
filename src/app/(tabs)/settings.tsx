@@ -20,6 +20,8 @@ export default function SettingsScreen() {
   const [keyInput, setKeyInput] = React.useState('');
   const [debtEdits, setDebtEdits] = React.useState<Record<string, string>>({});
   const [newDebtName, setNewDebtName] = React.useState('');
+  const [salaryEdit, setSalaryEdit] = React.useState<string | null>(null);
+  const [expensesEdit, setExpensesEdit] = React.useState<string | null>(null);
   const [newDebtAmount, setNewDebtAmount] = React.useState('');
 
   // Resync local edit state during render only when the stored value actually
@@ -105,6 +107,56 @@ export default function SettingsScreen() {
               <Button label="Save" size="sm" variant="secondary" onPress={() => void s.saveTimeDefault(cls, defaults[cls])} />
             </View>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <Text variant="heading">Salary &amp; spending</Text>
+        </CardHeader>
+        <CardContent className="gap-3">
+          <Text variant="muted" className="text-sm">
+            Stated monthly figures for the cashflow view (gross earnings, net profit) and, later,
+            the net-worth projection. They never mix into measured NAV or returns.
+          </Text>
+          <View className="flex-row items-end gap-3">
+            <View className="flex-1">
+              <Input
+                label={`Take-home salary / month (${s.baseCurrency})`}
+                value={salaryEdit ?? s.salaryMonthly}
+                onChangeText={setSalaryEdit}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <Button
+              label="Save"
+              size="sm"
+              variant="secondary"
+              onPress={async () => {
+                await s.saveMonthlyFigure('salary', (salaryEdit ?? s.salaryMonthly).trim());
+                setSalaryEdit(null);
+              }}
+            />
+          </View>
+          <View className="flex-row items-end gap-3">
+            <View className="flex-1">
+              <Input
+                label={`General spending / month (${s.baseCurrency})`}
+                value={expensesEdit ?? s.expensesMonthly}
+                onChangeText={setExpensesEdit}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <Button
+              label="Save"
+              size="sm"
+              variant="secondary"
+              onPress={async () => {
+                await s.saveMonthlyFigure('expenses', (expensesEdit ?? s.expensesMonthly).trim());
+                setExpensesEdit(null);
+              }}
+            />
+          </View>
         </CardContent>
       </Card>
 

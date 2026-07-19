@@ -396,11 +396,17 @@ async function loadSettingsData() {
   for (const cls of Object.keys(CLASS_HOURS_DEFAULTS) as AssetClass[]) {
     defaults[cls] = String(await classHoursDefault(cls));
   }
+  const base = (await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED';
+  const salary = await getSetting(db, SETTING_KEYS.salaryMonthlyMinor);
+  const expenses = await getSetting(db, SETTING_KEYS.expensesMonthlyMinor);
   return {
     // Scale by the rate's own currency — a blanket /100 corrupts JPY/KWD.
     hourlyRate: rate !== null ? String(fromMinor(Number(rate), rateCurrency)) : '',
-    baseCurrency: (await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED',
+    baseCurrency: base,
     timeDefaults: defaults,
+    // Stated §14 figures, displayed in base-currency major units.
+    salaryMonthly: salary !== null ? String(fromMinor(Number(salary), base)) : '',
+    expensesMonthly: expenses !== null ? String(fromMinor(Number(expenses), base)) : '',
     audit: (await changesFor(db, 'settings', SETTING_KEYS.hourlyRateMinor)).slice(0, 10),
   };
 }
@@ -409,6 +415,8 @@ export function useSettingsData() {
   const [hourlyRate, setHourlyRateState] = React.useState<string>('');
   const [baseCurrency, setBaseCurrencyState] = React.useState<string>('AED');
   const [timeDefaults, setTimeDefaults] = React.useState<Record<string, string>>({});
+  const [salaryMonthly, setSalaryMonthlyState] = React.useState<string>('');
+  const [expensesMonthly, setExpensesMonthlyState] = React.useState<string>('');
   const [audit, setAudit] = React.useState<
     { entity: string; field: string; oldValue: string | null; newValue: string | null; timestamp: string; source: string }[]
   >([]);
@@ -418,6 +426,8 @@ export function useSettingsData() {
     setHourlyRateState(s.hourlyRate);
     setBaseCurrencyState(s.baseCurrency);
     setTimeDefaults(s.timeDefaults);
+    setSalaryMonthlyState(s.salaryMonthly);
+    setExpensesMonthlyState(s.expensesMonthly);
     setAudit(s.audit);
   }, []);
 
@@ -428,6 +438,8 @@ export function useSettingsData() {
       setHourlyRateState(s.hourlyRate);
       setBaseCurrencyState(s.baseCurrency);
       setTimeDefaults(s.timeDefaults);
+      setSalaryMonthlyState(s.salaryMonthly);
+      setExpensesMonthlyState(s.expensesMonthly);
       setAudit(s.audit);
     });
     return () => {
@@ -469,6 +481,18 @@ export function useSettingsData() {
     [reload]
   );
 
+  /** Stated monthly figure in base-currency major units; '' clears it. */
+  const saveMonthlyFigure = React.useCallback(
+    async (which: 'salary' | 'expenses', amount: string) => {
+      const key =
+        which === 'salary' ? SETTING_KEYS.salaryMonthlyMinor : SETTING_KEYS.expensesMonthlyMinor;
+      const base = ((await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED').toUpperCase();
+      await setSetting(db, key, amount.trim() === '' ? '0' : String(toMinor(amount, base)), 'manual');
+      await reload();
+    },
+    [reload]
+  );
+
   const saveTimeDefault = React.useCallback(
     async (cls: string, hours: string) => {
       await setSetting(db, `time_default_${cls}`, hours, 'manual');
@@ -481,10 +505,13 @@ export function useSettingsData() {
     hourlyRate,
     baseCurrency,
     timeDefaults,
+    salaryMonthly,
+    expensesMonthly,
     audit,
     saveHourlyRate,
     saveBaseCurrency,
     saveTimeDefault,
+    saveMonthlyFigure,
   };
 }
 

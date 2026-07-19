@@ -5,13 +5,16 @@ import { AllocationBars } from '@/components/allocation';
 import { NavChart } from '@/components/navChart';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
-import { useIncome, useNavHistory, usePortfolio } from '@/hooks/data';
+import { computeCashflow } from '@/domain/cashflow';
+import { toMinor } from '@/domain/money';
+import { useIncome, useNavHistory, usePortfolio, useSettingsData } from '@/hooks/data';
 import { money, signedMoney } from '@/lib/format';
 
 export default function DashboardScreen() {
   const { view, loading, refresh } = usePortfolio();
   const { history, reload: reloadHistory } = useNavHistory();
   const { income, reload: reloadIncome } = useIncome();
+  const settings = useSettingsData();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
@@ -131,6 +134,60 @@ export default function DashboardScreen() {
             ) : null}
           </CardContent>
         </Card>
+      ) : null}
+
+      {income && (settings.salaryMonthly !== '' || settings.expensesMonthly !== '') ? (
+        (() => {
+          const base = income.baseCurrency;
+          const cf = computeCashflow({
+            salaryMonthlyMinor: settings.salaryMonthly !== '' ? toMinor(settings.salaryMonthly, base) : 0,
+            expensesMonthlyMinor:
+              settings.expensesMonthly !== '' ? toMinor(settings.expensesMonthly, base) : 0,
+            passiveIncomeMinor: income.totalMinor,
+          });
+          return (
+            <Card>
+              <CardHeader>
+                <Text variant="heading">Cashflow — annual</Text>
+              </CardHeader>
+              <CardContent className="gap-2">
+                <View className="flex-row justify-between">
+                  <Text variant="muted" className="text-sm">
+                    Salary (stated ×12)
+                  </Text>
+                  <Text className="font-mono text-sm">{money(cf.salaryAnnualMinor, base)}</Text>
+                </View>
+                <View className="flex-row justify-between">
+                  <Text variant="muted" className="text-sm">
+                    Passive income ({income.year}, measured)
+                  </Text>
+                  <Text className="font-mono text-sm">{money(income.totalMinor, base)}</Text>
+                </View>
+                <View className="flex-row justify-between">
+                  <Text className="text-sm">Gross earnings</Text>
+                  <Text className="font-mono text-sm">{money(cf.grossEarningsMinor, base)}</Text>
+                </View>
+                <View className="flex-row justify-between">
+                  <Text variant="muted" className="text-sm">
+                    Spending (stated ×12)
+                  </Text>
+                  <Text className="font-mono text-sm">−{money(cf.expensesAnnualMinor, base)}</Text>
+                </View>
+                <View className="flex-row justify-between border-t border-border pt-2">
+                  <Text className="text-sm font-semibold">Net profit</Text>
+                  <Text
+                    className={`font-mono text-sm ${cf.netProfitMinor >= 0 ? 'text-gain' : 'text-loss'}`}>
+                    {signedMoney(cf.netProfitMinor, base)}
+                  </Text>
+                </View>
+                <Text variant="muted" className="text-xs">
+                  Stated figures live in Settings → Salary &amp; spending; they never mix into
+                  measured NAV.
+                </Text>
+              </CardContent>
+            </Card>
+          );
+        })()
       ) : null}
 
       <Card>
