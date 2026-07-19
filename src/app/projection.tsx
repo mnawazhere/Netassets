@@ -4,9 +4,9 @@
  * labeled as such; nothing writes back into actuals.
  */
 import Slider from '@react-native-community/slider';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 
 import { NavChart } from '@/components/navChart';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -77,7 +77,20 @@ export default function ProjectionScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Salary runner' }} />
+      <Stack.Screen
+        options={{
+          title: 'Salary runner',
+          // Always give a way out — incl. cold starts where there is no
+          // stack beneath to pop (deep link straight onto this screen).
+          headerLeft: () => (
+            <Pressable
+              hitSlop={12}
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}>
+              <Text className="text-base">‹ Back</Text>
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView
         className="flex-1 bg-background"
         contentContainerClassName="gap-4 p-4"

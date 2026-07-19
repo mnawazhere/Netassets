@@ -24,6 +24,7 @@ export default function RootLayout() {
         }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="asset/[id]" options={{ title: 'Asset', headerBackTitle: 'Back' }} />
+        <Stack.Screen name="projection" options={{ title: 'Salary runner', headerBackTitle: 'Back' }} />
       </Stack>
     </DatabaseProvider>
   );
