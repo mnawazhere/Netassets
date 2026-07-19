@@ -88,3 +88,23 @@ describe('parseExchangeApi', () => {
     expect(parseExchangeApi({ usd: { aed: -1 }, date: '2025-07-17' }, 'USD', 'AED')).toBeNull();
   });
 });
+
+describe('parseStooqHistoryCsv', () => {
+  const { parseStooqHistoryCsv } = require('./parsers');
+
+  it('returns the last trading day close in the window', () => {
+    const csv = 'Date,Open,High,Low,Close,Volume\n2026-07-16,420,428,418,425.3,1000\n2026-07-17,426,430,424,428.9,900';
+    expect(parseStooqHistoryCsv(csv, 'USD')).toEqual({ date: '2026-07-17', priceMinor: 42890 });
+  });
+
+  it('skips malformed trailing rows and falls back to the previous one', () => {
+    const csv = 'Date,Open,High,Low,Close,Volume\n2026-07-16,420,428,418,425.3,1000\nNo data';
+    expect(parseStooqHistoryCsv(csv, 'USD')).toEqual({ date: '2026-07-16', priceMinor: 42530 });
+  });
+
+  it('nulls on empty/error bodies', () => {
+    expect(parseStooqHistoryCsv('', 'USD')).toBeNull();
+    expect(parseStooqHistoryCsv('Exceeded the daily hits limit', 'USD')).toBeNull();
+    expect(parseStooqHistoryCsv('Date,Open,High,Low,Close,Volume', 'USD')).toBeNull();
+  });
+});

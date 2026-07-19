@@ -27,6 +27,32 @@ export function parseStooqCsv(
 }
 
 /**
+ * Stooq daily-history CSV (`/q/d/l/?s=aapl.us&d1=20260710&d2=20260718&i=d`):
+ *   Date,Open,High,Low,Close,Volume
+ *   2026-07-17,210.1,213.5,209.8,212.4,48123456
+ * Returns the LAST row's close — the latest trading day in the requested
+ * window (weekends/holidays make the target date itself absent). Null on
+ * empty/error bodies, mirroring parseStooqCsv's contract.
+ */
+export function parseStooqHistoryCsv(
+  csv: string,
+  currency: string
+): { date: string; priceMinor: number } | null {
+  const lines = csv.trim().split(/\r?\n/);
+  if (lines.length < 2) return null;
+  for (let i = lines.length - 1; i >= 1; i--) {
+    const cells = lines[i].split(',');
+    if (cells.length < 5) continue;
+    const [date, , , , close] = cells;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const price = Number(close);
+    if (!Number.isFinite(price) || price <= 0) continue;
+    return { date, priceMinor: toMinor(price, currency) };
+  }
+  return null;
+}
+
+/**
  * CoinGecko `/simple/price?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true`:
  *   { "bitcoin": { "usd": 117832, "last_updated_at": 1752741600 } }
  */

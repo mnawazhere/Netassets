@@ -14,7 +14,13 @@
  */
 import type { PricePoint } from '@/adapters/types';
 
-import { parseCoinGecko, parseExchangeApi, parseStooqCsv, parseYahooChart } from './parsers';
+import {
+  parseCoinGecko,
+  parseExchangeApi,
+  parseStooqCsv,
+  parseStooqHistoryCsv,
+  parseYahooChart,
+} from './parsers';
 
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -77,6 +83,36 @@ export async function fetchEquityPrice(
 ): Promise<PricePoint | null> {
   const stooqId = providerId ?? `${symbol.toLowerCase().replace(/\./g, '-')}.us`;
   return (await fetchStooqEquity(symbol, stooqId)) ?? (await fetchYahooEquity(symbol, stooqId));
+}
+
+/** US equity/ETF close ON (or the trading day before) `date` (YYYY-MM-DD),
+ *  via Stooq daily history — a week-long window absorbs weekends/holidays.
+ *  Falls back to the CURRENT price chain when history is unreachable, so
+ *  the caller always distinguishes by the returned asOf date. */
+export async function fetchEquityPriceOn(
+  symbol: string,
+  date: string,
+  providerId?: string | null
+): Promise<PricePoint | null> {
+  const stooqId = providerId ?? `${symbol.toLowerCase().replace(/\./g, '-')}.us`;
+  const d2 = date.replace(/-/g, '');
+  const from = new Date(`${date}T00:00:00Z`);
+  from.setUTCDate(from.getUTCDate() - 7);
+  const d1 = from.toISOString().slice(0, 10).replace(/-/g, '');
+  const res = await fetchWithTimeout(
+    `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqId)}&d1=${d1}&d2=${d2}&i=d`
+  );
+  if (res) {
+    try {
+      const parsed = parseStooqHistoryCsv(await res.text(), 'USD');
+      if (parsed) {
+        return { symbol: symbol.toUpperCase(), currency: 'USD', priceMinor: parsed.priceMinor, asOf: parsed.date };
+      }
+    } catch {
+      // fall through to the current-price chain
+    }
+  }
+  return fetchEquityPrice(symbol, providerId);
 }
 
 /** Ticker → CoinGecko id for the majors; extend as holdings appear. */

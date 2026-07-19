@@ -17,7 +17,9 @@ import {
   submitManualTransaction,
   useReviewQueue,
 } from '@/hooks/data';
+import { fromMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
+import { assumeQuantity } from '@/services/assumeQty';
 
 const TXN_TYPES: readonly TransactionType[] = ['BUY', 'SELL', 'DIVIDEND', 'RENT', 'FEE', 'MAINTENANCE'];
 const CLASSES: readonly AssetClass[] = ['EQUITY', 'CRYPTO', 'ETF', 'PROPERTY', 'COLLECTIBLE'];
@@ -44,6 +46,8 @@ export default function CaptureScreen() {
   const [location, setLocation] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [resolvingId, setResolvingId] = React.useState<string | null>(null);
+  const [qtyHint, setQtyHint] = React.useState<string | null>(null);
+  const [assuming, setAssuming] = React.useState(false);
 
   const reloadAssets = React.useCallback(async () => {
     setAssets(await listAssetOptions());
@@ -70,6 +74,36 @@ export default function CaptureScreen() {
   }, [assetId, newAssetClass, assets]);
 
   const selected = assets.find((a) => a.id === assetId) ?? null;
+
+  // Assume-at-market: price the symbol on the chosen date and pre-fill
+  // qty = amount ÷ price. A proposal only — the field stays editable.
+  const assumableSymbol = assetId ? (selected?.symbol ?? null) : (binding?.symbol ?? null);
+  const onAssumeQty = async (): Promise<void> => {
+    if (!assumableSymbol || !activeClass) return;
+    setAssuming(true);
+    try {
+      const est = await assumeQuantity({
+        symbol: assumableSymbol,
+        class: activeClass,
+        amountMajor: amount.trim(),
+        amountCurrency: currency.trim() || 'AED',
+        date: date.trim(),
+      });
+      if (!est) {
+        Alert.alert(
+          "Couldn't price",
+          'No market price reachable for that symbol/date (or no FX rate for the amount currency). Enter the quantity manually.'
+        );
+        return;
+      }
+      setQuantity(String(est.quantity));
+      setQtyHint(
+        `≈ ${est.quantity} @ ${est.priceCurrency} ${fromMinor(est.priceMinor, est.priceCurrency)} (${est.priceAsOf}) — edit if wrong`
+      );
+    } finally {
+      setAssuming(false);
+    }
+  };
 
   const activeClass = assetId ? (selected?.class ?? null) : newAssetClass;
   const isMarketTxn = activeClass !== null && MARKET_CLASSES.has(activeClass);
@@ -399,9 +433,33 @@ export default function CaptureScreen() {
               <Input label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
             </View>
             <View className="w-24">
-              <Input label="Qty" value={quantity} onChangeText={setQuantity} keyboardType="decimal-pad" />
+              <Input
+                label="Qty"
+                value={quantity}
+                onChangeText={(v) => {
+                  setQuantity(v);
+                  setQtyHint(null); // a manual edit supersedes the estimate
+                }}
+                keyboardType="decimal-pad"
+              />
             </View>
           </View>
+          {isMarketTxn && assumableSymbol && (type === 'BUY' || type === 'SELL') ? (
+            <>
+              <Button
+                label={assuming ? 'Pricing…' : `Assume qty @ ${assumableSymbol} market price`}
+                size="sm"
+                variant="secondary"
+                onPress={() => void onAssumeQty()}
+                disabled={assuming || !amount.trim() || !date.trim()}
+              />
+              {qtyHint ? (
+                <Text variant="muted" className="text-xs">
+                  {qtyHint}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
           <Input
             label="Hours spent (defaults per class, edit if you care)"
             value={hoursSpent}
