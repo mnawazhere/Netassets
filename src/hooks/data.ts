@@ -24,6 +24,7 @@ import {
 } from '@/repositories/liabilities';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
+import { computeIncomeView, computeNavHistory, type IncomeResult, type NavHistoryResult } from '@/services/history';
 import { primePrice, refreshPriceFor } from '@/services/pricing';
 import { fetchFxRate } from '@/services/providers';
 import { ensureAsset } from '@/services/resolution';
@@ -440,6 +441,50 @@ export function useSettingsData() {
     saveBaseCurrency,
     saveTimeDefault,
   };
+}
+
+// ---------- tier 2: NAV history + income ----------
+
+export function useNavHistory(): { history: NavHistoryResult | null; reload: () => Promise<void> } {
+  const [history, setHistory] = React.useState<NavHistoryResult | null>(null);
+
+  const reload = React.useCallback(async () => {
+    setHistory(await computeNavHistory(db, todayISO()));
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void computeNavHistory(db, todayISO()).then((h) => {
+      if (cancelled) return;
+      setHistory(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { history, reload };
+}
+
+export function useIncome(): { income: IncomeResult | null; reload: () => Promise<void> } {
+  const [income, setIncome] = React.useState<IncomeResult | null>(null);
+
+  const reload = React.useCallback(async () => {
+    setIncome(await computeIncomeView(db, todayISO()));
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void computeIncomeView(db, todayISO()).then((v) => {
+      if (cancelled) return;
+      setIncome(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { income, reload };
 }
 
 // ---------- liabilities (NAV = assets − liabilities) ----------

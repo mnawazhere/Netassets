@@ -97,6 +97,29 @@ export async function submitManualTransaction(
   return { ok: false, reason: 'Capture is iOS-only' };
 }
 
+export interface NavHistoryResult {
+  points: { date: string; totalMinor: number }[];
+  baseCurrency: string;
+}
+
+export function useNavHistory(): { history: NavHistoryResult | null; reload: () => Promise<void> } {
+  return { history: null, reload: async () => {} };
+}
+
+export interface IncomeResult {
+  year: number;
+  totalMinor: number;
+  byType: Record<string, number>;
+  byAsset: { assetId: string; assetName: string; amountMinor: number }[];
+  byMonth: number[];
+  unconverted: { assetId: string; assetName: string; date: string }[];
+  baseCurrency: string;
+}
+
+export function useIncome(): { income: IncomeResult | null; reload: () => Promise<void> } {
+  return { income: null, reload: async () => {} };
+}
+
 export interface LiabilityRow {
   id: string;
   name: string;

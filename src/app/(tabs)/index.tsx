@@ -2,25 +2,29 @@ import * as React from 'react';
 import { Alert, RefreshControl, ScrollView, View } from 'react-native';
 
 import { AllocationBars } from '@/components/allocation';
+import { NavChart } from '@/components/navChart';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
-import { usePortfolio } from '@/hooks/data';
+import { useIncome, useNavHistory, usePortfolio } from '@/hooks/data';
 import { money, signedMoney } from '@/lib/format';
 
 export default function DashboardScreen() {
   const { view, loading, refresh } = usePortfolio();
+  const { history, reload: reloadHistory } = useNavHistory();
+  const { income, reload: reloadIncome } = useIncome();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
     try {
       await refresh();
+      await Promise.all([reloadHistory(), reloadIncome()]);
     } catch (e) {
       Alert.alert('Refresh failed', String(e instanceof Error ? e.message : e));
     } finally {
       setRefreshing(false);
     }
-  }, [refresh]);
+  }, [refresh, reloadHistory, reloadIncome]);
 
   if (loading || !view) {
     return (
@@ -79,6 +83,53 @@ export default function DashboardScreen() {
           ) : null}
         </CardContent>
       </Card>
+
+      {history && history.points.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <Text variant="heading">Net worth — last 12 months</Text>
+          </CardHeader>
+          <CardContent className="gap-2">
+            <NavChart points={history.points} currency={history.baseCurrency} />
+            <Text variant="muted" className="text-xs">
+              Marks step through history; market holdings at today&apos;s prices; debts at current
+              balance.
+            </Text>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {income && income.totalMinor !== 0 ? (
+        <Card>
+          <CardHeader>
+            <Text variant="heading">Income — {income.year}</Text>
+          </CardHeader>
+          <CardContent className="gap-2">
+            <Text variant="title" className="font-mono text-2xl text-gain">
+              {signedMoney(income.totalMinor, income.baseCurrency)}
+            </Text>
+            {Object.entries(income.byType).map(([type, amount]) => (
+              <View key={type} className="flex-row justify-between">
+                <Text variant="muted" className="text-sm">
+                  {type}
+                </Text>
+                <Text className="font-mono text-sm">{money(amount, income.baseCurrency)}</Text>
+              </View>
+            ))}
+            {income.byAsset[0] ? (
+              <Text variant="muted" className="text-xs">
+                top earner: {income.byAsset[0].assetName} (
+                {money(income.byAsset[0].amountMinor, income.baseCurrency)})
+              </Text>
+            ) : null}
+            {income.unconverted.length > 0 ? (
+              <Text variant="muted" className="text-xs">
+                {income.unconverted.length} row(s) unconvertible — not included
+              </Text>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

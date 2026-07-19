@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { parseCoinGecko, parseExchangeApi, parseStooqCsv, parseYahooChart } from './parsers';
+import { parseCoinGecko, parseExchangeApi, parseStooqCsv, parseStooqHistoryCsv, parseYahooChart } from './parsers';
 
 describe('parseStooqCsv', () => {
   const good = 'Symbol,Date,Time,Open,High,Low,Close,Volume\nAAPL.US,2025-07-17,22:00:11,210.1,213.5,209.8,212.4,48123456\n';
@@ -90,8 +90,6 @@ describe('parseExchangeApi', () => {
 });
 
 describe('parseStooqHistoryCsv', () => {
-  const { parseStooqHistoryCsv } = require('./parsers');
-
   it('returns the last trading day close in the window', () => {
     const csv = 'Date,Open,High,Low,Close,Volume\n2026-07-16,420,428,418,425.3,1000\n2026-07-17,426,430,424,428.9,900';
     expect(parseStooqHistoryCsv(csv, 'USD')).toEqual({ date: '2026-07-17', priceMinor: 42890 });
