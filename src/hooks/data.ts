@@ -567,6 +567,46 @@ export function useIncome(): { income: IncomeResult | null; reload: () => Promis
   return { income, reload };
 }
 
+// ---------- projection assumptions (§14 salary runner) ----------
+
+/** Assumed annual growth (FRACTIONS) per class — blunt, editable defaults. */
+export const DEFAULT_GROWTH: Record<AssetClass, number> = {
+  EQUITY: 0.07,
+  ETF: 0.07,
+  CRYPTO: 0.05,
+  PROPERTY: 0.04,
+  COLLECTIBLE: 0.03,
+};
+
+export function useProjectionAssumptions() {
+  const [growth, setGrowth] = React.useState<Record<string, number>>({ ...DEFAULT_GROWTH });
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const out: Record<string, number> = { ...DEFAULT_GROWTH };
+      for (const cls of Object.keys(DEFAULT_GROWTH)) {
+        const stored = await getSetting(db, `projection_growth_${cls}`);
+        if (stored !== null && Number.isFinite(Number(stored))) out[cls] = Number(stored);
+      }
+      if (!cancelled) setGrowth(out);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** pct as typed by the user, e.g. "7" → stores 0.07. */
+  const saveGrowthPct = React.useCallback(async (cls: string, pct: string) => {
+    const fraction = Number(pct) / 100;
+    if (!Number.isFinite(fraction)) return;
+    await setSetting(db, `projection_growth_${cls}`, String(fraction), 'manual');
+    setGrowth((g) => ({ ...g, [cls]: fraction }));
+  }, []);
+
+  return { growth, saveGrowthPct };
+}
+
 // ---------- actual spend (§14 projected vs actual) ----------
 
 export interface SpendRow {

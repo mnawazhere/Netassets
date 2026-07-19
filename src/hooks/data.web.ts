@@ -131,6 +131,21 @@ export interface LiabilityRow {
   note: string | null;
 }
 
+export const DEFAULT_GROWTH: Record<AssetClass, number> = {
+  EQUITY: 0.07,
+  ETF: 0.07,
+  CRYPTO: 0.05,
+  PROPERTY: 0.04,
+  COLLECTIBLE: 0.03,
+};
+
+export function useProjectionAssumptions() {
+  return {
+    growth: { ...DEFAULT_GROWTH } as Record<string, number>,
+    saveGrowthPct: async (_c: string, _p: string) => {},
+  };
+}
+
 export interface SpendRow {
   id: string;
   month: string;

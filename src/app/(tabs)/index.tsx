@@ -1,5 +1,6 @@
+import { Link } from 'expo-router';
 import * as React from 'react';
-import { Alert, RefreshControl, ScrollView, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 
 import { AllocationBars } from '@/components/allocation';
 import { NavChart } from '@/components/navChart';
@@ -219,6 +220,24 @@ export default function DashboardScreen() {
           <AllocationBars data={netWorth.byPlatform} currency={baseCurrency} />
         </CardContent>
       </Card>
+
+      <Link href="/projection" asChild>
+        <Pressable>
+          <Card>
+            <CardContent className="flex-row items-center justify-between py-4">
+              <View>
+                <Text className="font-semibold">Salary runner</Text>
+                <Text variant="muted" className="text-xs">
+                  Project net worth 10 years out — assumptions, not actuals
+                </Text>
+              </View>
+              <Text variant="muted" className="text-xl">
+                →
+              </Text>
+            </CardContent>
+          </Card>
+        </Pressable>
+      </Link>
 
       <Card>
         <CardHeader>

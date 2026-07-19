@@ -14,9 +14,12 @@ const STROKE = 2;
 export function NavChart({
   points,
   currency,
+  showQuarters = true,
 }: {
   points: { date: string; totalMinor: number }[];
   currency: string;
+  /** Quarter verticals assume a monthly series — projections pass false. */
+  showQuarters?: boolean;
 }) {
   const [width, setWidth] = React.useState(0);
 
@@ -61,7 +64,7 @@ export function NavChart({
       <View
         style={{ height: CHART_HEIGHT }}
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-        {width > 0
+        {width > 0 && showQuarters
           ? quarters.map((q) => (
               <React.Fragment key={`q-${q.i}`}>
                 <View
