@@ -87,6 +87,27 @@ export const liabilities = sqliteTable(
   (t) => [index('liabilities_asset_idx').on(t.assetId)]
 );
 
+/** ACTUAL monthly household spend (§14 projected-vs-actual): one or more
+ *  rows per month (several cards), summed by the cashflow view. Stated
+ *  projections stay in settings; these are measurements. */
+export const spendEntries = sqliteTable(
+  'spend_entries',
+  {
+    id: text('id').primaryKey(),
+    /** Calendar month 'YYYY-MM'. */
+    month: text('month').notNull(),
+    /** Spend for the month in minor units of `currency`, POSITIVE. */
+    amountMinor: integer('amount_minor').notNull(),
+    currency: text('currency').notNull(),
+    /** Where the figure came from: manual entry or a statement capture. */
+    source: text('source', { enum: CHANGE_SOURCES }).notNull(),
+    note: text('note'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('spend_entries_month_idx').on(t.month)]
+);
+
 export const transactions = sqliteTable(
   'transactions',
   {

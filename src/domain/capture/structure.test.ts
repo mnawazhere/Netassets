@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 
-import { validateCaptureProposal } from './structure';
+import { validateCaptureProposal, validateSpendExtract } from './structure';
 
 /** Model output is untrusted text — the validator is the only gate between
  *  a cloud response and the capture form. */
@@ -53,5 +53,20 @@ describe('validateCaptureProposal', () => {
   it('clamps confidence into [0,1]', () => {
     expect(validateCaptureProposal({ ...good, confidence: 7 })?.confidence).toBe(1);
     expect(validateCaptureProposal({ ...good, confidence: -1 })?.confidence).toBe(0);
+  });
+});
+
+describe('validateSpendExtract', () => {
+  const good = { month: '2026-06', total: '18432.50', currency: 'AED', confidence: 0.85 };
+
+  it('passes a well-formed extract', () => {
+    expect(validateSpendExtract(good)).toEqual(good);
+  });
+
+  it('rejects bad months, negative/wordy totals, junk currency', () => {
+    expect(validateSpendExtract({ ...good, month: 'June 2026' })).toBeNull();
+    expect(validateSpendExtract({ ...good, total: '-500' })).toBeNull();
+    expect(validateSpendExtract({ ...good, total: 'eighteen thousand' })).toBeNull();
+    expect(validateSpendExtract({ ...good, currency: 'dirhams' })).toBeNull();
   });
 });

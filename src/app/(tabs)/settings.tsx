@@ -6,7 +6,10 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ChipRow } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
-import { useAiSettings, useLiabilities, useSettingsData } from '@/hooks/data';
+import { useAiSettings, useLiabilities, useSettingsData, useSpend } from '@/hooks/data';
+import { structureSpendStatement } from '@/services/ai/structurer';
+import { pickAndOcrImage } from '@/services/capture/sources';
+import { todayISO } from '@/lib/format';
 import { fromMinor } from '@/domain/money';
 
 const BASE_CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'JPY'] as const;
@@ -22,6 +25,38 @@ export default function SettingsScreen() {
   const [newDebtName, setNewDebtName] = React.useState('');
   const [salaryEdit, setSalaryEdit] = React.useState<string | null>(null);
   const [expensesEdit, setExpensesEdit] = React.useState<string | null>(null);
+  const spend = useSpend();
+  const [spendMonth, setSpendMonth] = React.useState(todayISO().slice(0, 7));
+  const [spendAmount, setSpendAmount] = React.useState('');
+  const [ocrBusy, setOcrBusy] = React.useState(false);
+
+  const onStatementCapture = async (): Promise<void> => {
+    if (!ai.enabled) {
+      Alert.alert(
+        'Cloud structuring is off',
+        'Reading a statement screenshot sends its extracted TEXT (redacted on-device) to the AI. Enable it under AI symbol lookup.'
+      );
+      return;
+    }
+    setOcrBusy(true);
+    try {
+      const text = await pickAndOcrImage();
+      if (text === null) return;
+      const extract = await structureSpendStatement(text, todayISO());
+      if (!extract || extract.confidence === 0) {
+        Alert.alert("Couldn't read that", 'No statement total found in the image — enter the month manually.');
+        return;
+      }
+      setSpendMonth(extract.month);
+      setSpendAmount(extract.total);
+      Alert.alert(
+        'Statement read',
+        `${extract.month}: ${extract.currency} ${extract.total} (confidence ${Math.round(extract.confidence * 100)}%). Review, then Record.`
+      );
+    } finally {
+      setOcrBusy(false);
+    }
+  };
   const [newDebtAmount, setNewDebtAmount] = React.useState('');
 
   // Resync local edit state during render only when the stored value actually
@@ -155,6 +190,52 @@ export default function SettingsScreen() {
                 await s.saveMonthlyFigure('expenses', (expensesEdit ?? s.expensesMonthly).trim());
                 setExpensesEdit(null);
               }}
+            />
+          </View>
+          <View className="mt-2 gap-2 border-t border-border pt-3">
+            <Text className="text-sm font-semibold">Actual spend — recorded months</Text>
+            {spend.entries.slice(0, 6).map((e) => (
+              <View key={e.id} className="flex-row items-center justify-between">
+                <Text variant="muted" className="text-sm">
+                  {e.month} · {e.source}
+                </Text>
+                <View className="flex-row items-center gap-2">
+                  <Text className="font-mono text-sm">{fromMinor(e.amountMinor, e.currency)} {e.currency}</Text>
+                  <Button label="✕" size="sm" variant="secondary" onPress={() => void spend.removeEntry(e.id)} />
+                </View>
+              </View>
+            ))}
+            <View className="flex-row items-end gap-3">
+              <View className="w-28">
+                <Input label="Month (YYYY-MM)" value={spendMonth} onChangeText={setSpendMonth} />
+              </View>
+              <View className="flex-1">
+                <Input
+                  label={`Spent (${s.baseCurrency})`}
+                  value={spendAmount}
+                  onChangeText={setSpendAmount}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <Button
+                label="Record"
+                size="sm"
+                onPress={async () => {
+                  if (!/^\d{4}-\d{2}$/.test(spendMonth.trim()) || !spendAmount.trim()) {
+                    Alert.alert('Check inputs', 'Month must be YYYY-MM and amount non-empty.');
+                    return;
+                  }
+                  await spend.recordMonth(spendMonth.trim(), spendAmount.trim(), s.baseCurrency, 'manual');
+                  setSpendAmount('');
+                }}
+              />
+            </View>
+            <Button
+              label={ocrBusy ? 'Reading…' : '📷 From card statement (screenshot)'}
+              size="sm"
+              variant="secondary"
+              onPress={() => void onStatementCapture()}
+              disabled={ocrBusy}
             />
           </View>
         </CardContent>

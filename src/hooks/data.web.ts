@@ -131,6 +131,35 @@ export interface LiabilityRow {
   note: string | null;
 }
 
+export interface SpendRow {
+  id: string;
+  month: string;
+  amountMinor: number;
+  currency: string;
+  source: string;
+  note: string | null;
+}
+
+export interface SpendResult {
+  year: number;
+  byMonth: number[];
+  ytdMinor: number;
+  monthsRecorded: number;
+  avgMonthMinor: number;
+  unconverted: { month: string }[];
+  baseCurrency: string;
+}
+
+export function useSpend() {
+  return {
+    spend: null as SpendResult | null,
+    entries: [] as SpendRow[],
+    reload: async () => {},
+    recordMonth: async (_m: string, _a: string, _c: string, _s: 'manual' | 'import', _n?: string) => {},
+    removeEntry: async (_id: string) => {},
+  };
+}
+
 export function useLiabilities() {
   return {
     liabilities: [] as LiabilityRow[],

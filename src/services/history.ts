@@ -4,10 +4,12 @@ import { isMarketPriced } from '@/adapters';
 import type { Db } from '@/db/client';
 import { makeRateSeries, rateOn, type RateSeries } from '@/domain/fx';
 import { aggregateIncome, type IncomeView } from '@/domain/income';
+import { aggregateSpend, type SpendView } from '@/domain/spend';
 import { convertMinor } from '@/domain/money';
 import { navHistory, type HistoryAsset, type NavPoint } from '@/domain/navHistory';
 import { listAssets, transactionsFor, valuationMarksFor } from '@/repositories/assets';
 import { listLiabilities } from '@/repositories/liabilities';
+import { listSpendEntries } from '@/repositories/spend';
 import { SETTING_KEYS, getSetting } from '@/repositories/settings';
 
 import { getRateSeries } from './fx';
@@ -149,5 +151,18 @@ export async function computeIncomeView(db: Db, today: string): Promise<IncomeRe
     const previous = aggregateIncome(incomeTxns, year - 1, toBase);
     if (previous.totalMinor !== 0) view = previous;
   }
+  return { ...view, baseCurrency };
+}
+
+export interface SpendResult extends SpendView {
+  baseCurrency: string;
+}
+
+/** This-year ACTUAL spend rollup (§14 projected vs actual). */
+export async function computeSpendView(db: Db, today: string): Promise<SpendResult> {
+  const baseCurrency = (await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED';
+  const toBase = await makeToBase(db, baseCurrency, today);
+  const rows = await listSpendEntries(db);
+  const view = aggregateSpend(rows, Number(today.slice(0, 4)), toBase);
   return { ...view, baseCurrency };
 }

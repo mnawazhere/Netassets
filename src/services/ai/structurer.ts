@@ -9,7 +9,12 @@
  * transaction; the trivial-row Haiku downgrade can come later).
  */
 import { redactForCloud } from '@/domain/capture/redact';
-import { validateCaptureProposal, type CaptureProposal } from '@/domain/capture/structure';
+import {
+  validateCaptureProposal,
+  validateSpendExtract,
+  type CaptureProposal,
+  type SpendExtract,
+} from '@/domain/capture/structure';
 
 import { getAnthropicKey } from '../secureKeys';
 
@@ -71,6 +76,60 @@ export async function structureCapture(
     const jsonMatch = /\{[\s\S]*\}/.exec(textOut);
     if (!jsonMatch) return null;
     return validateCaptureProposal(JSON.parse(jsonMatch[0]));
+  } catch {
+    return null;
+  }
+}
+
+const SPEND_PROMPT = (text: string, today: string) =>
+  `You read OCR text from a credit-card or bank statement. Today is ${today}.
+
+Text:
+"""
+${text}
+"""
+
+Reply with ONLY a JSON object, no prose:
+{"month": "YYYY-MM the statement period covers",
+ "total": "decimal string — the TOTAL spend/purchases for the period (not the minimum payment, not the credit limit)",
+ "currency": "3-letter code", "confidence": 0.0-1.0}
+
+If the text is not a statement or the total is not identifiable, reply {"confidence": 0}.`;
+
+/** Card-statement screenshot → month + total spend (§14 actuals). Same
+ *  privacy contract: redacted OCR text only; never throws; null = no read. */
+export async function structureSpendStatement(
+  text: string,
+  today: string
+): Promise<SpendExtract | null> {
+  const key = await getAnthropicKey();
+  if (!key) return null;
+  const redacted = redactForCloud(text).trim();
+  if (redacted === '') return null;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 200,
+        messages: [{ role: 'user', content: SPEND_PROMPT(redacted, today) }],
+      }),
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { content?: { type: string; text?: string }[] };
+    const textOut = body.content?.find((b) => b.type === 'text')?.text ?? '';
+    const jsonMatch = /\{[\s\S]*\}/.exec(textOut);
+    if (!jsonMatch) return null;
+    return validateSpendExtract(JSON.parse(jsonMatch[0]));
   } catch {
     return null;
   }

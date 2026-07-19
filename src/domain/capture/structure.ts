@@ -73,3 +73,32 @@ export function validateCaptureProposal(raw: unknown): CaptureProposal | null {
     confidence,
   };
 }
+
+/** Card-statement extraction (§14 actuals): the month and TOTAL spend a
+ *  statement screenshot's OCR text describes. Same untrusted-output rules. */
+export interface SpendExtract {
+  /** 'YYYY-MM' the statement covers. */
+  month: string;
+  /** Total spend, major units decimal string, positive. */
+  total: string;
+  currency: string;
+  confidence: number;
+}
+
+export function validateSpendExtract(raw: unknown): SpendExtract | null {
+  const o = raw as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object') return null;
+  if (typeof o.month !== 'string' || !/^\d{4}-\d{2}$/.test(o.month)) return null;
+  const total = typeof o.total === 'string' ? o.total.trim() : String(o.total ?? '');
+  if (!/^\d+(\.\d+)?$/.test(total)) return null;
+  const currency =
+    typeof o.currency === 'string' && /^[A-Za-z]{3}$/.test(o.currency.trim())
+      ? o.currency.trim().toUpperCase()
+      : null;
+  if (!currency) return null;
+  const confidence =
+    typeof o.confidence === 'number' && Number.isFinite(o.confidence)
+      ? Math.min(1, Math.max(0, o.confidence))
+      : 0;
+  return { month: o.month, total, currency, confidence };
+}

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
 import { computeCashflow } from '@/domain/cashflow';
 import { toMinor } from '@/domain/money';
-import { useIncome, useNavHistory, usePortfolio, useSettingsData } from '@/hooks/data';
+import { useIncome, useNavHistory, usePortfolio, useSettingsData, useSpend } from '@/hooks/data';
 import { money, signedMoney } from '@/lib/format';
 
 export default function DashboardScreen() {
@@ -15,6 +15,7 @@ export default function DashboardScreen() {
   const { history, reload: reloadHistory } = useNavHistory();
   const { income, reload: reloadIncome } = useIncome();
   const settings = useSettingsData();
+  const { spend } = useSpend();
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
@@ -169,10 +170,21 @@ export default function DashboardScreen() {
                 </View>
                 <View className="flex-row justify-between">
                   <Text variant="muted" className="text-sm">
-                    Spending (stated ×12)
+                    Spending (projected ×12)
                   </Text>
                   <Text className="font-mono text-sm">−{money(cf.expensesAnnualMinor, base)}</Text>
                 </View>
+                {spend && spend.monthsRecorded > 0 ? (
+                  <View className="flex-row justify-between">
+                    <Text variant="muted" className="text-sm">
+                      Spending (actual, {spend.monthsRecorded} mo avg)
+                    </Text>
+                    <Text
+                      className={`font-mono text-sm ${spend.avgMonthMinor * 12 <= cf.expensesAnnualMinor ? 'text-gain' : 'text-loss'}`}>
+                      −{money(spend.avgMonthMinor * 12, base)}/yr
+                    </Text>
+                  </View>
+                ) : null}
                 <View className="flex-row justify-between border-t border-border pt-2">
                   <Text className="text-sm font-semibold">Net profit</Text>
                   <Text

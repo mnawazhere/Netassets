@@ -22,10 +22,18 @@ import {
   listLiabilities,
   updateOutstanding,
 } from '@/repositories/liabilities';
+import { addSpendEntry, deleteSpendEntry, listSpendEntries } from '@/repositories/spend';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
 import { assumeQuantity } from '@/services/assumeQty';
-import { computeIncomeView, computeNavHistory, type IncomeResult, type NavHistoryResult } from '@/services/history';
+import {
+  computeIncomeView,
+  computeNavHistory,
+  computeSpendView,
+  type IncomeResult,
+  type NavHistoryResult,
+  type SpendResult,
+} from '@/services/history';
 import { primePrice, refreshPriceFor } from '@/services/pricing';
 import { fetchFxRate } from '@/services/providers';
 import { ensureAsset } from '@/services/resolution';
@@ -557,6 +565,64 @@ export function useIncome(): { income: IncomeResult | null; reload: () => Promis
   }, []);
 
   return { income, reload };
+}
+
+// ---------- actual spend (§14 projected vs actual) ----------
+
+export interface SpendRow {
+  id: string;
+  month: string;
+  amountMinor: number;
+  currency: string;
+  source: string;
+  note: string | null;
+}
+
+export function useSpend() {
+  const [spend, setSpend] = React.useState<SpendResult | null>(null);
+  const [entries, setEntries] = React.useState<SpendRow[]>([]);
+
+  const reload = React.useCallback(async () => {
+    setSpend(await computeSpendView(db, todayISO()));
+    setEntries(await listSpendEntries(db));
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void Promise.all([computeSpendView(db, todayISO()), listSpendEntries(db)]).then(([v, rows]) => {
+      if (cancelled) return;
+      setSpend(v);
+      setEntries(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** month 'YYYY-MM'; amount major units in `currency`. */
+  const recordMonth = React.useCallback(
+    async (month: string, amount: string, currency: string, source: 'manual' | 'import', note?: string) => {
+      await addSpendEntry(db, {
+        month,
+        amountMinor: Math.abs(toMinor(amount, currency)),
+        currency: currency.toUpperCase(),
+        source,
+        note: note ?? null,
+      });
+      await reload();
+    },
+    [reload]
+  );
+
+  const removeEntry = React.useCallback(
+    async (id: string) => {
+      await deleteSpendEntry(db, id);
+      await reload();
+    },
+    [reload]
+  );
+
+  return { spend, entries, reload, recordMonth, removeEntry };
 }
 
 // ---------- liabilities (NAV = assets − liabilities) ----------

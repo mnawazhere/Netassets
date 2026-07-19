@@ -50,6 +50,13 @@
       "when": 1784400338941,
       "tag": "0006_groovy_molly_hayes",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1784454686952,
+      "tag": "0007_nice_the_santerians",
+      "breakpoints": true
     }
   ]
 }
