@@ -87,7 +87,9 @@ export default function DashboardScreen() {
       {history && history.points.length > 1 ? (
         <Card>
           <CardHeader>
-            <Text variant="heading">Net worth — last 12 months</Text>
+            <Text variant="heading">
+              Net worth — since {history.points[0].date.slice(0, 7)}
+            </Text>
           </CardHeader>
           <CardContent className="gap-2">
             <NavChart points={history.points} currency={history.baseCurrency} />

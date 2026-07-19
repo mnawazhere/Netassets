@@ -92,7 +92,18 @@ export async function computeNavHistory(db: Db, today: string): Promise<NavHisto
     outstandingBaseMinor: toBase(l.outstandingMinor, l.currency) ?? 0,
   }));
 
-  const from = `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`;
+  // Start where the DATA starts (earliest mark or position change) so the
+  // curve shows actual growth — a fixed trailing window can lie flat when
+  // all history predates it. Capped at 36 months, floored at 12.
+  const events = historyAssets.flatMap((a) =>
+    a.kind === 'marks'
+      ? (a.marks ?? []).map((m) => m.date)
+      : (a.quantityChanges ?? []).map((c) => c.date)
+  );
+  const yearAgo = `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`;
+  const cap = `${Number(today.slice(0, 4)) - 3}-${today.slice(5, 7)}-01`;
+  const earliest = events.length > 0 ? [...events].sort()[0] : yearAgo;
+  const from = earliest < cap ? cap : earliest > yearAgo ? yearAgo : `${earliest.slice(0, 7)}-01`;
   return { points: navHistory(historyAssets, liabilities, from, today), baseCurrency };
 }
 
