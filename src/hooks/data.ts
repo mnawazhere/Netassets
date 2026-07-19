@@ -15,7 +15,7 @@ import { parseEtoroCsv } from '@/domain/ingestion/etoro';
 import { convertMinor, fromMinor, toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
 import { changesFor } from '@/repositories/changeLog';
-import { listAssets, valuationMarksFor } from '@/repositories/assets';
+import { getAsset, listAssets, valuationMarksFor } from '@/repositories/assets';
 import {
   createLiability,
   deleteLiability,
@@ -24,6 +24,7 @@ import {
 } from '@/repositories/liabilities';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
+import { assumeQuantity } from '@/services/assumeQty';
 import { computeIncomeView, computeNavHistory, type IncomeResult, type NavHistoryResult } from '@/services/history';
 import { primePrice, refreshPriceFor } from '@/services/pricing';
 import { fetchFxRate } from '@/services/providers';
@@ -31,7 +32,7 @@ import { ensureAsset } from '@/services/resolution';
 import { getAnthropicKey, setAnthropicKey } from '@/services/secureKeys';
 import { pendingReviews, resolveReview } from '@/repositories/reviewQueue';
 import { SETTING_KEYS, getSetting, setSetting } from '@/repositories/settings';
-import { insertTransaction } from '@/repositories/transactions';
+import { insertTransaction, insertValuationMark } from '@/repositories/transactions';
 import { runImport, type ImportSummary } from '@/services/ingestion';
 import { computePortfolioView, type PortfolioView } from '@/services/netWorth';
 import { refreshAll } from '@/services/refresh';
@@ -174,8 +175,10 @@ const NEGATIVE_TYPES = new Set<TransactionType>(['BUY', 'FEE', 'MAINTENANCE']);
 export type ManualResult =
   /** priced: true = fetched/primed now; false = fetch FAILED (network or
    *  provider) — surfaced so a reachability problem is visible at save
-   *  time, not a mystery dash later; undefined = not a pricing situation. */
-  | { ok: true; priced?: boolean }
+   *  time, not a mystery dash later; undefined = not a pricing situation.
+   *  assumedQty: set when a qty-less market BUY/SELL had its quantity
+   *  derived automatically at the transaction date's market price. */
+  | { ok: true; priced?: boolean; assumedQty?: { quantity: number; priceAsOf: string } }
   | { ok: false; reason: string }
   | { ok: false; confirmBinding: PendingConfirmation };
 
@@ -249,6 +252,48 @@ export async function submitManualTransaction(
         }
       }
     }
+    // A VALUATION_MARK is a statement of current worth, not a cashflow —
+    // it writes to the marks table that drives mark-valued (property/
+    // collectible) pricing, and never enters the transaction stream.
+    if (entry.type === 'VALUATION_MARK') {
+      await insertValuationMark(db, {
+        assetId,
+        date: entry.date,
+        valueMinor: Math.abs(toMinor(entry.amount, entry.currency)),
+        currency: entry.currency.toUpperCase(),
+        source: 'manual',
+        note: entry.note,
+      });
+      return { ok: true };
+    }
+
+    // Auto-assume: a qty-less market BUY/SELL would value the position at
+    // ZERO (a fabricated −100% loss). Derive qty = amount ÷ market price on
+    // the transaction date; the user can edit the transaction's qty later.
+    // Failure to price leaves qty null — the valuation layer then surfaces
+    // the asset as unvalued instead of zero-valued.
+    let quantity = entry.quantity;
+    let assumedQty: { quantity: number; priceAsOf: string } | undefined;
+    if (quantity === null && (entry.type === 'BUY' || entry.type === 'SELL')) {
+      const assetRow = await getAsset(db, assetId);
+      if (
+        assetRow?.symbol &&
+        (assetRow.class === 'EQUITY' || assetRow.class === 'ETF' || assetRow.class === 'CRYPTO')
+      ) {
+        const est = await assumeQuantity({
+          symbol: assetRow.symbol,
+          class: assetRow.class,
+          amountMajor: entry.amount,
+          amountCurrency: entry.currency,
+          date: entry.date,
+        });
+        if (est) {
+          quantity = est.quantity;
+          assumedQty = { quantity: est.quantity, priceAsOf: est.priceAsOf };
+        }
+      }
+    }
+
     const magnitude = Math.abs(toMinor(entry.amount, entry.currency));
     await insertTransaction(
       db,
@@ -258,7 +303,7 @@ export async function submitManualTransaction(
         date: entry.date,
         amountMinor: NEGATIVE_TYPES.has(entry.type) ? -magnitude : magnitude,
         currency: entry.currency.toUpperCase(),
-        quantity: entry.quantity,
+        quantity,
         hoursSpent: entry.hoursSpent,
         sourceAccount: normalizeAccount(entry.sourceAccount),
         sourceTxnId: null,
@@ -267,7 +312,7 @@ export async function submitManualTransaction(
       },
       'manual'
     );
-    return { ok: true, priced };
+    return { ok: true, priced, assumedQty };
   } catch (e) {
     if (String(e).toLowerCase().includes('unique')) {
       return { ok: false, reason: 'Duplicate of an existing transaction (same fingerprint)' };

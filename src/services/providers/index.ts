@@ -20,6 +20,7 @@ import {
   parseStooqCsv,
   parseStooqHistoryCsv,
   parseYahooChart,
+  parseYahooChartHistory,
 } from './parsers';
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -85,33 +86,53 @@ export async function fetchEquityPrice(
   return (await fetchStooqEquity(symbol, stooqId)) ?? (await fetchYahooEquity(symbol, stooqId));
 }
 
-/** US equity/ETF close ON (or the trading day before) `date` (YYYY-MM-DD),
- *  via Stooq daily history — a week-long window absorbs weekends/holidays.
- *  Falls back to the CURRENT price chain when history is unreachable, so
- *  the caller always distinguishes by the returned asOf date. */
+/** US equity/ETF close ON (or the trading day before) `date` (YYYY-MM-DD).
+ *  Chain: Stooq daily history → Yahoo chart history (each with a week-long
+ *  window to absorb weekends/holidays) → the CURRENT price chain as last
+ *  resort. Callers distinguish a fallback by the returned asOf date. */
 export async function fetchEquityPriceOn(
   symbol: string,
   date: string,
   providerId?: string | null
 ): Promise<PricePoint | null> {
   const stooqId = providerId ?? `${symbol.toLowerCase().replace(/\./g, '-')}.us`;
-  const d2 = date.replace(/-/g, '');
   const from = new Date(`${date}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - 7);
-  const d1 = from.toISOString().slice(0, 10).replace(/-/g, '');
-  const res = await fetchWithTimeout(
-    `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqId)}&d1=${d1}&d2=${d2}&i=d`
+  const d1iso = from.toISOString().slice(0, 10);
+
+  const stooqRes = await fetchWithTimeout(
+    `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqId)}&d1=${d1iso.replace(/-/g, '')}&d2=${date.replace(/-/g, '')}&i=d`
   );
-  if (res) {
+  if (stooqRes) {
     try {
-      const parsed = parseStooqHistoryCsv(await res.text(), 'USD');
+      const parsed = parseStooqHistoryCsv(await stooqRes.text(), 'USD');
       if (parsed) {
         return { symbol: symbol.toUpperCase(), currency: 'USD', priceMinor: parsed.priceMinor, asOf: parsed.date };
+      }
+    } catch {
+      // fall through to Yahoo history
+    }
+  }
+
+  // Yahoo history: period bounds are epoch SECONDS; end is exclusive-ish so
+  // pad one day past the target to include it.
+  const ySymbol = stooqId.replace(/\.us$/, '').toUpperCase();
+  const period1 = Math.floor(new Date(`${d1iso}T00:00:00Z`).getTime() / 1000);
+  const period2 = Math.floor(new Date(`${date}T00:00:00Z`).getTime() / 1000) + 86_400;
+  const yahooRes = await fetchWithTimeout(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySymbol)}?interval=1d&period1=${period1}&period2=${period2}`
+  );
+  if (yahooRes) {
+    try {
+      const parsed = parseYahooChartHistory(await yahooRes.json());
+      if (parsed) {
+        return { symbol: symbol.toUpperCase(), currency: parsed.currency, priceMinor: parsed.priceMinor, asOf: parsed.date };
       }
     } catch {
       // fall through to the current-price chain
     }
   }
+
   return fetchEquityPrice(symbol, providerId);
 }
 

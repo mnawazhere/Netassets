@@ -114,7 +114,7 @@ export default function CaptureScreen() {
       }
       setQuantity(String(est.quantity));
       setQtyHint(
-        `≈ ${est.quantity} @ ${est.priceCurrency} ${fromMinor(est.priceMinor, est.priceCurrency)} (${est.priceAsOf}) — edit if wrong`
+        `≈ ${est.quantity} @ ${est.priceCurrency} ${fromMinor(est.priceMinor, est.priceCurrency)} (${est.priceAsOf.slice(0, 10)}) — edit if wrong`
       );
     } finally {
       setAssuming(false);
@@ -275,11 +275,18 @@ export default function CaptureScreen() {
       if (result.ok) {
         Alert.alert(
           'Saved',
-          result.priced === false
-            ? 'Transaction recorded — but the price fetch FAILED (offline, or the provider is unreachable from this network). The asset shows unpriced until a refresh succeeds.'
-            : result.priced === true
-              ? 'Transaction recorded — priced and tracking.'
-              : 'Transaction recorded (audited in change log).'
+          [
+            result.priced === false
+              ? 'Transaction recorded — but the price fetch FAILED (offline, or the provider is unreachable from this network). The asset shows unpriced until a refresh succeeds.'
+              : result.priced === true
+                ? 'Transaction recorded — priced and tracking.'
+                : 'Transaction recorded (audited in change log).',
+            'assumedQty' in result && result.assumedQty
+              ? `Qty assumed: ${result.assumedQty.quantity} @ the ${result.assumedQty.priceAsOf.slice(0, 10)} market price — edit the transaction if the broker fill differed.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
         );
         setAmount('');
         setQuantity('');
@@ -558,7 +565,17 @@ export default function CaptureScreen() {
             />
           ) : null}
           <Text variant="muted">Type</Text>
-          <ChipRow options={TXN_TYPES} value={type} onChange={setType} />
+          <ChipRow
+            options={isMarketTxn ? TXN_TYPES : [...TXN_TYPES, 'VALUATION_MARK' as TransactionType]}
+            value={type}
+            onChange={setType}
+          />
+          {type === 'VALUATION_MARK' ? (
+            <Text variant="muted" className="text-xs">
+              A statement of current worth ("it's worth X now") — updates the asset's value, not a
+              cashflow.
+            </Text>
+          ) : null}
           <View className="flex-row gap-3">
             <View className="flex-1">
               <Input label={`Amount (${currency})`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />

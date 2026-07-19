@@ -53,6 +53,37 @@ export function parseStooqHistoryCsv(
 }
 
 /**
+ * Yahoo chart HISTORY (`?interval=1d&period1=<epoch>&period2=<epoch>`):
+ * pairs `timestamp[]` with `indicators.quote[0].close[]` and returns the
+ * LAST bar with a non-null close — the latest trading day in the window.
+ * Null on malformed/empty bodies (chart.error, missing arrays, all-null
+ * closes), mirroring parseYahooChart's contract.
+ */
+export function parseYahooChartHistory(
+  body: unknown
+): { date: string; priceMinor: number; currency: string } | null {
+  const result = (
+    body as { chart?: { result?: { meta?: { currency?: string }; timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[] }[] } }[] } }
+  )?.chart?.result?.[0];
+  const currency = result?.meta?.currency;
+  const timestamps = result?.timestamp;
+  const closes = result?.indicators?.quote?.[0]?.close;
+  if (!currency || !Array.isArray(timestamps) || !Array.isArray(closes)) return null;
+  for (let i = closes.length - 1; i >= 0; i--) {
+    const close = closes[i];
+    const ts = timestamps[i];
+    if (typeof close === 'number' && Number.isFinite(close) && close > 0 && typeof ts === 'number') {
+      return {
+        date: new Date(ts * 1000).toISOString().slice(0, 10),
+        priceMinor: toMinor(close, currency),
+        currency,
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * CoinGecko `/simple/price?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true`:
  *   { "bitcoin": { "usd": 117832, "last_updated_at": 1752741600 } }
  */

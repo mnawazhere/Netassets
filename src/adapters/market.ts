@@ -9,9 +9,17 @@ export function marketValuation(
   txns: (CashTxn & { quantity?: number | null })[],
   price: PricePoint,
   opts: { fresh: boolean }
-): Valuation {
+): Valuation | null {
+  const qty = quantityHeld(txns);
+  // Zero held BECAUSE quantities are missing (a qty-less BUY) is unknowable,
+  // not zero — valuing it at 0 fabricates a −100% loss. Surface as unvalued.
+  // A genuine sold-out position (quantities present, netting to 0) stays 0.
+  const hasUnknownQty = txns.some(
+    (t) => (t.type === 'BUY' || t.type === 'SELL') && t.quantity == null
+  );
+  if (qty === 0 && hasUnknownQty) return null;
   return {
-    amountMinor: positionValueMinor(quantityHeld(txns), price.priceMinor),
+    amountMinor: positionValueMinor(qty, price.priceMinor),
     currency: price.currency,
     asOf: price.asOf,
     stale: !opts.fresh,

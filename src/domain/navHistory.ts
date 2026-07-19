@@ -23,6 +23,10 @@ export interface HistoryAsset {
 
 export interface HistoryLiability {
   outstandingBaseMinor: number;
+  /** Date the debt is known to exist from (its financed asset's first
+   *  event, else the balance's as-of date). Undefined = all history.
+   *  Without this, a 2024 property finance would drag 2023 NAV negative. */
+  fromDate?: string;
 }
 
 export interface NavPoint {
@@ -64,9 +68,11 @@ export function navHistory(
   from: string,
   to: string
 ): NavPoint[] {
-  const debt = liabilities.reduce((s, l) => s + l.outstandingBaseMinor, 0);
-
   return sampleDates(from, to).map((date) => {
+    const debt = liabilities.reduce(
+      (s, l) => s + (l.fromDate === undefined || l.fromDate <= date ? l.outstandingBaseMinor : 0),
+      0
+    );
     let total = 0;
     for (const a of assets) {
       if (a.kind === 'marks') {

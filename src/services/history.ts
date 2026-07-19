@@ -88,8 +88,19 @@ export async function computeNavHistory(db: Db, today: string): Promise<NavHisto
     }
   }
 
+  // A debt exists from its financed asset's first event (an Ijarah starts
+  // with the purchase), else from its balance's as-of date.
+  const firstEventByAsset = new Map<string, string>();
+  for (const a of historyAssets) {
+    const dates =
+      a.kind === 'marks'
+        ? (a.marks ?? []).map((m) => m.date)
+        : (a.quantityChanges ?? []).map((c) => c.date);
+    if (dates.length > 0) firstEventByAsset.set(a.id, [...dates].sort()[0]);
+  }
   const liabilities = (await listLiabilities(db)).map((l) => ({
     outstandingBaseMinor: toBase(l.outstandingMinor, l.currency) ?? 0,
+    fromDate: (l.assetId ? firstEventByAsset.get(l.assetId) : undefined) ?? l.asOf,
   }));
 
   // Start where the DATA starts (earliest mark or position change) so the

@@ -13,14 +13,37 @@ describe('marketValuation', () => {
       { symbol: 'AAPL', currency: 'USD', priceMinor: 21240, asOf: '2025-07-17T12:00:00Z' },
       { fresh: true }
     );
-    expect(v.amountMinor).toBe(318600); // 15 × $212.40
-    expect(v.currency).toBe('USD');
-    expect(v.stale).toBe(false);
+    expect(v).not.toBeNull();
+    expect(v!.amountMinor).toBe(318600); // 15 × $212.40
+    expect(v!.currency).toBe('USD');
+    expect(v!.stale).toBe(false);
   });
 
   it('cache-served price is marked stale', () => {
     const v = marketValuation([], { symbol: 'AAPL', currency: 'USD', priceMinor: 1, asOf: 't' }, { fresh: false });
-    expect(v.stale).toBe(true);
+    expect(v!.stale).toBe(true);
+  });
+
+  it('qty-less BUY → null (unknowable, not a fabricated −100% loss)', () => {
+    const v = marketValuation(
+      [{ type: 'BUY', date: '2026-06-09', amountMinor: -232200, hoursSpent: 0.1, quantity: null }],
+      { symbol: 'MSFT', currency: 'USD', priceMinor: 42530, asOf: '2026-07-17' },
+      { fresh: true }
+    );
+    expect(v).toBeNull();
+  });
+
+  it('genuinely sold-out position (quantities present) stays a real 0', () => {
+    const v = marketValuation(
+      [
+        { type: 'BUY', date: '2025-01-15', amountMinor: -185300, hoursSpent: 0.1, quantity: 10 },
+        { type: 'SELL', date: '2025-06-15', amountMinor: 220000, hoursSpent: 0.1, quantity: 10 },
+      ],
+      { symbol: 'AAPL', currency: 'USD', priceMinor: 21240, asOf: '2026-07-17' },
+      { fresh: true }
+    );
+    expect(v).not.toBeNull();
+    expect(v!.amountMinor).toBe(0);
   });
 });
 

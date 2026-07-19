@@ -61,6 +61,19 @@ describe('navHistory', () => {
     expect(jun.totalMinor).toBe(160000000 - 85000000);
   });
 
+  it('a dated debt only subtracts from its fromDate onward', () => {
+    const pts = navHistory(
+      [reeman],
+      [{ outstandingBaseMinor: 85000000, fromDate: '2024-06-01' }],
+      '2024-04-01',
+      '2024-07-31'
+    );
+    // Before the financed asset exists: no asset value, no debt — zero.
+    expect(pts.find((p) => p.date === '2024-04-30')!.totalMinor).toBe(0);
+    // From the purchase month: mark − debt.
+    expect(pts.find((p) => p.date === '2024-06-30')!.totalMinor).toBe(145000000 - 85000000);
+  });
+
   it('handles an empty portfolio', () => {
     expect(navHistory([], [], '2025-01-01', '2025-03-31').every((p) => p.totalMinor === 0)).toBe(true);
   });
