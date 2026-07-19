@@ -38,7 +38,11 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-4 p-4">
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerClassName="gap-4 p-4"
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled">
       <Card>
         <CardHeader>
           <Text variant="heading">Your hourly rate</Text>

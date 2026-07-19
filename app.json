@@ -46,7 +46,8 @@
         {
           "photosPermission": "Netassets reads the screenshot you pick to extract asset values. The image is processed on this device and never uploaded."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

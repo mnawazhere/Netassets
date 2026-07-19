@@ -45,11 +45,41 @@ export function NavChart({
         y: CHART_HEIGHT - ((value - min) / span) * (CHART_HEIGHT - DOT) - DOT / 2,
       }));
 
+  // Vertical quarter lines: a point whose month OPENS a quarter (Jan/Apr/
+  // Jul/Oct) marks the boundary. Q1 is labeled with its year, the rest Q2-Q4.
+  const quarters = points
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => ['01', '04', '07', '10'].includes(p.date.slice(5, 7)))
+    .map(({ p, i }) => ({
+      i,
+      label:
+        p.date.slice(5, 7) === '01' ? p.date.slice(0, 4) : `Q${Math.floor(Number(p.date.slice(5, 7)) / 3) + 1}`,
+    }));
+
   return (
     <View className="gap-2">
       <View
         style={{ height: CHART_HEIGHT }}
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {width > 0
+          ? quarters.map((q) => (
+              <React.Fragment key={`q-${q.i}`}>
+                <View
+                  className="absolute bg-border"
+                  style={{ width: 1, top: 0, bottom: 12, left: xy(q.i).x }}
+                />
+                {/* Right gutter is the value labels' lane — skip labels there. */}
+                {xy(q.i).x < width - 64 ? (
+                  <Text
+                    variant="muted"
+                    className="absolute font-mono text-[9px]"
+                    style={{ bottom: 0, left: xy(q.i).x + 2 }}>
+                    {q.label}
+                  </Text>
+                ) : null}
+              </React.Fragment>
+            ))
+          : null}
         {ticks.map((t) => (
           <React.Fragment key={`tick-${t.value}`}>
             <View

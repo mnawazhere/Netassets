@@ -10,13 +10,20 @@
  */
 
 /* eslint-disable @typescript-eslint/no-require-imports */
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+
+/** Expo Go can't host these native modules — even a caught require noisily
+ *  console.errors from expo-modules-core (LogBox red overlay), so never
+ *  attempt it there. Dev/Release builds pass this gate. */
+const IN_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 type SpeechModule = typeof import('expo-speech-recognition');
 
 function speech(): SpeechModule | null {
+  if (IN_EXPO_GO) return null;
   try {
     const m = require('expo-speech-recognition') as SpeechModule;
-    // Touching a native constant throws inside Expo Go — the availability probe.
+    // Touching a native constant throws when the native side is absent.
     m.ExpoSpeechRecognitionModule.isRecognitionAvailable();
     return m;
   } catch {
@@ -111,6 +118,7 @@ export async function pickAndOcrImage(): Promise<string | null> {
   if (!perm.granted) return null;
   const res = await picker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
   if (res.canceled || !res.assets?.[0]?.uri) return null;
+  if (IN_EXPO_GO) return null; // ML Kit OCR is native-only; see gate above
   try {
     const TextRecognition =
       (require('@react-native-ml-kit/text-recognition') as {

@@ -1,3 +1,4 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as React from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
@@ -337,7 +338,11 @@ export default function CaptureScreen() {
   };
 
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-4 p-4">
+    <ScrollView
+      className="flex-1 bg-background"
+      contentContainerClassName="gap-4 p-4"
+      keyboardDismissMode="on-drag"
+      keyboardShouldPersistTaps="handled">
       <Card>
         <CardHeader>
           <Text variant="heading">Import</Text>
@@ -562,9 +567,21 @@ export default function CaptureScreen() {
               <Input label="Currency" value={currency} onChangeText={setCurrency} autoCapitalize="characters" />
             </View>
           </View>
-          <View className="flex-row gap-3">
-            <View className="flex-1">
-              <Input label="Date (YYYY-MM-DD)" value={date} onChangeText={setDate} />
+          <View className="flex-row items-end gap-3">
+            <View className="flex-1 gap-1">
+              <Text variant="muted" className="text-sm">
+                Date
+              </Text>
+              <View className="flex-row">
+                <DateTimePicker
+                  value={new Date(`${date}T12:00:00Z`)}
+                  mode="date"
+                  display="compact"
+                  onValueChange={(_e, d) => {
+                    if (d) setDate(d.toISOString().slice(0, 10));
+                  }}
+                />
+              </View>
             </View>
             <View className="w-24">
               <Input
