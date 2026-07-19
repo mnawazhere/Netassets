@@ -37,11 +37,33 @@ export function NavChart({
       : CHART_HEIGHT - ((points[i].totalMinor - min) / span) * (CHART_HEIGHT - DOT) - DOT / 2,
   });
 
+  // Axis gridlines: max / mid / min of the range (one center line when flat).
+  const ticks = flat
+    ? [{ value: max, y: CHART_HEIGHT / 2 }]
+    : [max, (max + min) / 2, min].map((value) => ({
+        value,
+        y: CHART_HEIGHT - ((value - min) / span) * (CHART_HEIGHT - DOT) - DOT / 2,
+      }));
+
   return (
     <View className="gap-2">
       <View
         style={{ height: CHART_HEIGHT }}
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {ticks.map((t) => (
+          <React.Fragment key={`tick-${t.value}`}>
+            <View
+              className="absolute left-0 right-0 bg-border"
+              style={{ height: 1, top: t.y }}
+            />
+            <Text
+              variant="muted"
+              className="absolute right-0 font-mono text-[10px]"
+              style={{ top: t.y - 14 }}>
+              {money(t.value, currency, { compact: true })}
+            </Text>
+          </React.Fragment>
+        ))}
         {width > 0
           ? points.slice(0, -1).map((p, i) => {
               const a = xy(i);
