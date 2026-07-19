@@ -7,6 +7,7 @@ import m0002 from './0002_amusing_hercules.sql';
 import m0003 from './0003_moaning_doctor_doom.sql';
 import m0004 from './0004_marvelous_sinister_six.sql';
 import m0005 from './0005_mushy_wither.sql';
+import m0006 from './0006_groovy_molly_hayes.sql';
 
   export default {
     journal,
@@ -16,7 +17,8 @@ m0001,
 m0002,
 m0003,
 m0004,
-m0005
+m0005,
+m0006
     }
   }
   

@@ -9,13 +9,19 @@ import * as React from 'react';
 
 import { db } from '@/db/client';
 import { transactions } from '@/db/schema';
-import type { AssetClass, TransactionType } from '@/db/schema';
+import type { AssetClass, LiabilityKind, TransactionType } from '@/db/schema';
 import { normalizeAccount } from '@/domain/position';
 import { parseEtoroCsv } from '@/domain/ingestion/etoro';
 import { convertMinor, fromMinor, toMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
 import { changesFor } from '@/repositories/changeLog';
 import { listAssets, valuationMarksFor } from '@/repositories/assets';
+import {
+  createLiability,
+  deleteLiability,
+  listLiabilities,
+  updateOutstanding,
+} from '@/repositories/liabilities';
 import { SETTING_KEYS_AI } from '@/services/aiSettings';
 import { prepareManualBinding, type PendingConfirmation } from '@/services/bindingFlow';
 import { primePrice, refreshPriceFor } from '@/services/pricing';
@@ -434,6 +440,73 @@ export function useSettingsData() {
     saveBaseCurrency,
     saveTimeDefault,
   };
+}
+
+// ---------- liabilities (NAV = assets − liabilities) ----------
+
+export interface LiabilityRow {
+  id: string;
+  name: string;
+  kind: string;
+  assetId: string | null;
+  currency: string;
+  outstandingMinor: number;
+  asOf: string;
+  note: string | null;
+}
+
+export function useLiabilities() {
+  const [liabilities, setLiabilities] = React.useState<LiabilityRow[]>([]);
+
+  const reload = React.useCallback(async () => {
+    setLiabilities(await listLiabilities(db));
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void listLiabilities(db).then((rows) => {
+      if (cancelled) return;
+      setLiabilities(rows);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Record a newly confirmed balance, dated today (device clock, date-only). */
+  const saveOutstanding = React.useCallback(
+    async (id: string, amount: string, currency: string) => {
+      await updateOutstanding(db, id, toMinor(amount, currency), todayISO());
+      await reload();
+    },
+    [reload]
+  );
+
+  const addLiability = React.useCallback(
+    async (name: string, kind: string, amount: string, currency: string, assetId: string | null) => {
+      await createLiability(db, {
+        name,
+        kind: kind as LiabilityKind,
+        assetId,
+        currency,
+        outstandingMinor: toMinor(amount, currency),
+        asOf: todayISO(),
+        note: null,
+      });
+      await reload();
+    },
+    [reload]
+  );
+
+  const removeLiability = React.useCallback(
+    async (id: string) => {
+      await deleteLiability(db, id);
+      await reload();
+    },
+    [reload]
+  );
+
+  return { liabilities, reload, saveOutstanding, addLiability, removeLiability };
 }
 
 // ---------- AI settings (toggle = audited setting; KEY = Keychain ONLY) ----------

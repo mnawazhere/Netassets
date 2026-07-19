@@ -2,13 +2,14 @@
   "expo": {
     "name": "Netassets",
     "slug": "Netassets",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "netassets",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.anonymous.Netassets"
     },
     "android": {
       "adaptiveIcon": {

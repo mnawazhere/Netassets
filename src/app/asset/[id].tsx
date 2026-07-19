@@ -44,6 +44,10 @@ export default function AssetDetailScreen() {
   const base = portfolio.baseCurrency;
   const b = entry.breakdown;
   const maxMark = Math.max(...marks.map((m) => m.valueMinor), 1);
+  // Debts financing THIS asset (Ijarah → unit): the header shows EQUITY,
+  // value − outstanding, in base currency — never just the gross number.
+  const linkedDebts = portfolio.netWorth.perLiability.filter((l) => l.assetId === entry.id);
+  const nwEntry = portfolio.netWorth.perAsset.find((a) => a.id === entry.id);
 
   return (
     <>
@@ -60,6 +64,15 @@ export default function AssetDetailScreen() {
             <Text variant="title" className="font-mono text-3xl">
               {entry.valuation ? money(entry.valuation.amountMinor, entry.valuation.currency) : '—'}
             </Text>
+            {linkedDebts.length > 0 && nwEntry ? (
+              <Text variant="muted" className="mt-1 font-mono text-sm">
+                your equity {money(nwEntry.equityMinor, base)} · owed{' '}
+                {money(
+                  linkedDebts.reduce((s, l) => s + l.amountMinor, 0),
+                  base
+                )}
+              </Text>
+            ) : null}
             {entry.valuation ? (
               <Text variant="muted" className="mt-1">
                 as of {shortDate(entry.valuation.asOf)}

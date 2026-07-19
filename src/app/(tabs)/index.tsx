@@ -61,9 +61,20 @@ export default function DashboardScreen() {
           <Text variant="title" className="font-mono text-3xl">
             {money(netWorth.totalMinor, baseCurrency)}
           </Text>
+          {netWorth.liabilitiesTotalMinor > 0 ? (
+            <Text variant="muted" className="mt-1 font-mono text-sm">
+              Assets {money(netWorth.assetsTotalMinor, baseCurrency)} − debts{' '}
+              {money(netWorth.liabilitiesTotalMinor, baseCurrency)}
+            </Text>
+          ) : null}
           {netWorth.unvalued.length > 0 ? (
             <Text variant="muted" className="mt-1">
               {netWorth.unvalued.length} asset(s) unvalued — not included
+            </Text>
+          ) : null}
+          {netWorth.unconvertedLiabilities.length > 0 ? (
+            <Text variant="muted" className="mt-1">
+              {netWorth.unconvertedLiabilities.length} liability(ies) unconvertible — not included
             </Text>
           ) : null}
         </CardContent>

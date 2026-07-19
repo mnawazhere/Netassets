@@ -16,6 +16,7 @@ import {
   type BaseReturnBreakdown,
 } from '@/domain/returns/baseCurrency';
 import { listAssets, transactionsFor, valuationMarksFor } from '@/repositories/assets';
+import { listLiabilities } from '@/repositories/liabilities';
 import { SETTING_KEYS, getSetting } from '@/repositories/settings';
 
 import { getRateSeries } from './fx';
@@ -135,6 +136,7 @@ export async function computePortfolioView(db: Db, today: string): Promise<Portf
   const baseCurrency = (await getSetting(db, SETTING_KEYS.baseCurrency)) ?? 'AED';
   const hourlyRateMinor = Number((await getSetting(db, SETTING_KEYS.hourlyRateMinor)) ?? '0');
   const all = await listAssets(db);
+  const liabilityRows = await listLiabilities(db);
 
   const base = baseCurrency.toUpperCase();
   const snapshots: AssetSnapshot[] = [];
@@ -226,8 +228,11 @@ export async function computePortfolioView(db: Db, today: string): Promise<Portf
     });
   }
 
+  // Liability currencies need series too (a USD card against an AED base).
+  for (const l of liabilityRows) await loadRates(l.currency);
+
   return {
-    netWorth: aggregateNetWorth(snapshots, rates, baseCurrency, today),
+    netWorth: aggregateNetWorth(snapshots, rates, baseCurrency, today, liabilityRows),
     baseCurrency,
     hourlyRateMinor,
     anyStale,

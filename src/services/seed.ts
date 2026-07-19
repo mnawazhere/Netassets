@@ -17,6 +17,7 @@ import type { Db } from '@/db/client';
 import { toMinor } from '@/domain/money';
 import { nowISO, uuid } from '@/lib/uuid';
 import { createAsset, listAssets } from '@/repositories/assets';
+import { createLiability } from '@/repositories/liabilities';
 import { SETTING_KEYS, setSetting } from '@/repositories/settings';
 import { insertTransaction, insertValuationMark } from '@/repositories/transactions';
 
@@ -286,6 +287,18 @@ async function seedOnce(db: Db): Promise<void> {
     currency: 'AED',
     source: 'voice',
     note: '"Reeman unit\'s worth ~1.6M now"',
+  });
+  // NAV = assets − liabilities: the outstanding finance on the unit. The
+  // balance is a PLACEHOLDER — the owner edits it in Settings; without this
+  // row the headline number silently overstates real wealth (PM tier 1).
+  await createLiability(db, {
+    name: 'ADIB Ijarah — Reeman unit',
+    kind: 'PROPERTY_FINANCE',
+    assetId: reeman,
+    currency: 'AED',
+    outstandingMinor: toMinor('850000', 'AED'),
+    asOf: '2025-06-01',
+    note: 'Placeholder balance — set the actual outstanding in Settings',
   });
 
   // --- 3. Collectible: sealed Pokémon box (JPY — 0-decimal currency) ---

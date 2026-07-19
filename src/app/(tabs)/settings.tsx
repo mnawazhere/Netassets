@@ -6,16 +6,21 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { ChipRow } from '@/components/ui/chip';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
-import { useAiSettings, useSettingsData } from '@/hooks/data';
+import { useAiSettings, useLiabilities, useSettingsData } from '@/hooks/data';
+import { fromMinor } from '@/domain/money';
 
 const BASE_CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'JPY'] as const;
 
 export default function SettingsScreen() {
   const s = useSettingsData();
   const ai = useAiSettings();
+  const liab = useLiabilities();
   const [rate, setRate] = React.useState('');
   const [defaults, setDefaults] = React.useState<Record<string, string>>({});
   const [keyInput, setKeyInput] = React.useState('');
+  const [debtEdits, setDebtEdits] = React.useState<Record<string, string>>({});
+  const [newDebtName, setNewDebtName] = React.useState('');
+  const [newDebtAmount, setNewDebtAmount] = React.useState('');
 
   // Resync local edit state during render only when the stored value actually
   // changed (compared by content) — a content-identical reload must not clobber
@@ -96,6 +101,91 @@ export default function SettingsScreen() {
               <Button label="Save" size="sm" variant="secondary" onPress={() => void s.saveTimeDefault(cls, defaults[cls])} />
             </View>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <Text variant="heading">Liabilities</Text>
+        </CardHeader>
+        <CardContent className="gap-3">
+          <Text variant="muted" className="text-sm">
+            Outstanding debts subtract from net worth. A debt linked to an asset also turns that
+            asset&apos;s screen into an equity view (value − owed).
+          </Text>
+          {liab.liabilities.map((l) => (
+            <View key={l.id} className="gap-1">
+              <View className="flex-row items-end gap-3">
+                <View className="flex-1">
+                  <Input
+                    label={`${l.name} (${l.currency}, as of ${l.asOf})`}
+                    value={debtEdits[l.id] ?? fromMinor(l.outstandingMinor, l.currency)}
+                    onChangeText={(v) => setDebtEdits((d) => ({ ...d, [l.id]: v }))}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+                <Button
+                  label="Save"
+                  size="sm"
+                  variant="secondary"
+                  onPress={async () => {
+                    try {
+                      await liab.saveOutstanding(l.id, (debtEdits[l.id] ?? fromMinor(l.outstandingMinor, l.currency)).trim(), l.currency);
+                      setDebtEdits((d) => {
+                        const { [l.id]: _drop, ...rest } = d;
+                        return rest;
+                      });
+                    } catch (e) {
+                      Alert.alert('Not saved', String(e instanceof Error ? e.message : e));
+                    }
+                  }}
+                />
+                <Button
+                  label="✕"
+                  size="sm"
+                  variant="secondary"
+                  onPress={() =>
+                    Alert.alert('Remove liability?', l.name, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => void liab.removeLiability(l.id) },
+                    ])
+                  }
+                />
+              </View>
+              {l.note ? (
+                <Text variant="muted" className="text-xs">
+                  {l.note}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+          <View className="flex-row items-end gap-3">
+            <View className="flex-1">
+              <Input label="New debt name" value={newDebtName} onChangeText={setNewDebtName} />
+            </View>
+            <View className="w-28">
+              <Input
+                label={`Owed (${s.baseCurrency})`}
+                value={newDebtAmount}
+                onChangeText={setNewDebtAmount}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <Button
+              label="Add"
+              size="sm"
+              onPress={async () => {
+                if (!newDebtName.trim() || !newDebtAmount.trim()) return;
+                try {
+                  await liab.addLiability(newDebtName.trim(), 'OTHER', newDebtAmount.trim(), s.baseCurrency, null);
+                  setNewDebtName('');
+                  setNewDebtAmount('');
+                } catch (e) {
+                  Alert.alert('Not added', String(e instanceof Error ? e.message : e));
+                }
+              }}
+            />
+          </View>
         </CardContent>
       </Card>
 

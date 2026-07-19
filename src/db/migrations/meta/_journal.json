@@ -43,6 +43,13 @@
       "when": 1784394906506,
       "tag": "0005_mushy_wither",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784400338941,
+      "tag": "0006_groovy_molly_hayes",
+      "breakpoints": true
     }
   ]
 }

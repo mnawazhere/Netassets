@@ -97,6 +97,33 @@ export async function submitManualTransaction(
   return { ok: false, reason: 'Capture is iOS-only' };
 }
 
+export interface LiabilityRow {
+  id: string;
+  name: string;
+  kind: string;
+  assetId: string | null;
+  currency: string;
+  outstandingMinor: number;
+  asOf: string;
+  note: string | null;
+}
+
+export function useLiabilities() {
+  return {
+    liabilities: [] as LiabilityRow[],
+    reload: async () => {},
+    saveOutstanding: async (_id: string, _amount: string, _currency: string) => {},
+    addLiability: async (
+      _name: string,
+      _kind: string,
+      _amount: string,
+      _currency: string,
+      _assetId: string | null
+    ) => {},
+    removeLiability: async (_id: string) => {},
+  };
+}
+
 export function useAiSettings() {
   return {
     enabled: false,

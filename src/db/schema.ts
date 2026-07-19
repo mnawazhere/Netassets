@@ -30,6 +30,9 @@ export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 export const CHANGE_SOURCES = ['voice', 'manual', 'import', 'system'] as const;
 export type ChangeSource = (typeof CHANGE_SOURCES)[number];
 
+export const LIABILITY_KINDS = ['PROPERTY_FINANCE', 'CREDIT_CARD', 'LOAN', 'OTHER'] as const;
+export type LiabilityKind = (typeof LIABILITY_KINDS)[number];
+
 export const assets = sqliteTable(
   'assets',
   {
@@ -61,6 +64,29 @@ export const assets = sqliteTable(
  * duplicated lot double-counting cost basis. Convention: BUY/SELL
  * `amount_minor` is quantity × unit price only; fees are separate FEE rows.
  */
+/** Outstanding debts (spec: NAV = assets − liabilities). A liability
+ *  optionally links to the asset it finances (Ijarah → property unit) so the
+ *  asset screen can show EQUITY (value − outstanding), not gross value. */
+export const liabilities = sqliteTable(
+  'liabilities',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    kind: text('kind', { enum: LIABILITY_KINDS }).notNull(),
+    /** Asset this debt finances; null = unsecured (cards, personal loans). */
+    assetId: text('asset_id').references(() => assets.id),
+    currency: text('currency').notNull(),
+    /** Outstanding balance in minor units — stored POSITIVE (amount owed). */
+    outstandingMinor: integer('outstanding_minor').notNull(),
+    /** Date the balance was last confirmed — surfaces stale marks. */
+    asOf: text('as_of').notNull(),
+    note: text('note'),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [index('liabilities_asset_idx').on(t.assetId)]
+);
+
 export const transactions = sqliteTable(
   'transactions',
   {
