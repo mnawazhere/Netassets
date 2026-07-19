@@ -33,6 +33,19 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Netassets uses the microphone to capture voice notes about your assets. Audio is transcribed on this device and never uploaded.",
+          "speechRecognitionPermission": "Transcription happens on-device; only the resulting text (with identifiers removed) is sent for structuring."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Netassets reads the screenshot you pick to extract asset values. The image is processed on this device and never uploaded."
+        }
       ]
     ],
     "experiments": {

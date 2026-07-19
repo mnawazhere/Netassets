@@ -15,11 +15,21 @@ import {
   listAssetOptions,
   listKnownAccounts,
   submitManualTransaction,
+  useAiSettings,
   useReviewQueue,
 } from '@/hooks/data';
+import type { CaptureProposal } from '@/domain/capture/structure';
 import { fromMinor } from '@/domain/money';
 import { todayISO } from '@/lib/format';
+import { structureCapture } from '@/services/ai/structurer';
 import { assumeQuantity } from '@/services/assumeQty';
+import {
+  ensureVoicePermissions,
+  pickAndOcrImage,
+  startVoiceCapture,
+  voiceAvailable,
+  type VoiceSession,
+} from '@/services/capture/sources';
 
 const TXN_TYPES: readonly TransactionType[] = ['BUY', 'SELL', 'DIVIDEND', 'RENT', 'FEE', 'MAINTENANCE'];
 const CLASSES: readonly AssetClass[] = ['EQUITY', 'CRYPTO', 'ETF', 'PROPERTY', 'COLLECTIBLE'];
@@ -27,6 +37,7 @@ const MARKET_CLASSES = new Set<AssetClass>(['EQUITY', 'CRYPTO', 'ETF']);
 
 export default function CaptureScreen() {
   const review = useReviewQueue();
+  const ai = useAiSettings();
   const [assets, setAssets] = React.useState<
     Awaited<ReturnType<typeof listAssetOptions>>
   >([]);
@@ -48,6 +59,10 @@ export default function CaptureScreen() {
   const [resolvingId, setResolvingId] = React.useState<string | null>(null);
   const [qtyHint, setQtyHint] = React.useState<string | null>(null);
   const [assuming, setAssuming] = React.useState(false);
+  const [voiceSession, setVoiceSession] = React.useState<VoiceSession | null>(null);
+  const [transcript, setTranscript] = React.useState('');
+  const [captureBusy, setCaptureBusy] = React.useState<'voice' | 'photo' | null>(null);
+  const [captureNote, setCaptureNote] = React.useState<string | null>(null);
 
   const reloadAssets = React.useCallback(async () => {
     setAssets(await listAssetOptions());
@@ -108,6 +123,99 @@ export default function CaptureScreen() {
   const activeClass = assetId ? (selected?.class ?? null) : newAssetClass;
   const isMarketTxn = activeClass !== null && MARKET_CLASSES.has(activeClass);
   const accountChips = [...new Set(['etoro', 'trading212', ...knownAccounts])];
+
+  /** A validated proposal PRE-FILLS the form — the user reviews and taps
+   *  Save; capture never writes to the DB directly (spec §6 review gate). */
+  const applyProposal = (p: CaptureProposal, source: 'voice' | 'ocr'): void => {
+    const existing = assets.find((a) => a.name.toLowerCase() === p.assetName.toLowerCase());
+    if (existing) {
+      setAssetId(existing.id);
+    } else {
+      setAssetId(null);
+      setNewAssetName(p.assetName);
+      setNewAssetClass(p.class);
+    }
+    setType(p.type);
+    setAmount(p.amount);
+    setCurrency(p.currency);
+    setDate(p.date);
+    setQuantity(p.quantity !== null ? String(p.quantity) : '');
+    if (p.hoursSpent !== null) setHoursSpent(String(p.hoursSpent));
+    if (p.account) setAccount(p.account);
+    setCaptureNote(
+      `${source === 'voice' ? 'Voice' : 'Screenshot'} → form (confidence ${Math.round(p.confidence * 100)}%). Review below, then Save.`
+    );
+  };
+
+  const structureText = async (text: string, source: 'voice' | 'ocr'): Promise<void> => {
+    if (!ai.enabled) {
+      Alert.alert(
+        'Cloud structuring is off',
+        'Turning speech/screenshots into transactions sends the extracted TEXT (redacted on-device) to the AI. Enable "AI symbol lookup" in Settings and add an API key to use capture.'
+      );
+      return;
+    }
+    const proposal = await structureCapture(text, source, todayISO());
+    if (!proposal || proposal.confidence === 0) {
+      Alert.alert(
+        "Couldn't structure that",
+        source === 'voice'
+          ? 'The transcript did not parse into a transaction. The text stays below — fill the form manually.'
+          : 'No transaction found in that image. Fill the form manually.'
+      );
+      return;
+    }
+    applyProposal(proposal, source);
+  };
+
+  const onVoicePress = async (): Promise<void> => {
+    if (voiceSession) {
+      voiceSession.stop(); // end listener finishes the flow
+      return;
+    }
+    if (!(await ensureVoicePermissions())) {
+      Alert.alert('Microphone unavailable', 'Voice capture needs mic + speech permissions (Settings → Netassets).');
+      return;
+    }
+    setTranscript('');
+    setCaptureNote(null);
+    const session = startVoiceCapture(setTranscript, (finalText) => {
+      setVoiceSession(null);
+      if (!finalText) {
+        setCaptureBusy(null);
+        return;
+      }
+      void (async () => {
+        setCaptureBusy('voice');
+        try {
+          await structureText(finalText, 'voice');
+        } finally {
+          setCaptureBusy(null);
+        }
+      })();
+    });
+    if (!session) {
+      Alert.alert('Voice capture unavailable', 'On-device speech recognition needs the dev/Release build (not Expo Go).');
+      return;
+    }
+    setVoiceSession(session);
+  };
+
+  const onPhotoPress = async (): Promise<void> => {
+    setCaptureBusy('photo');
+    setCaptureNote(null);
+    try {
+      const text = await pickAndOcrImage();
+      if (text === null) {
+        setCaptureBusy(null);
+        return; // cancelled, denied, or OCR unavailable — no alert spam
+      }
+      setTranscript(text);
+      await structureText(text, 'ocr');
+    } finally {
+      setCaptureBusy(null);
+    }
+  };
 
   const onImportCsv = async () => {
     setBusy(true);
@@ -236,11 +344,37 @@ export default function CaptureScreen() {
         </CardHeader>
         <CardContent className="gap-3">
           <Button label="Import eToro statement (CSV)" onPress={onImportCsv} disabled={busy} />
-          <Button label="Voice note — needs dev build" variant="outline" disabled />
-          <Button label="Photo / screenshot — needs dev build" variant="outline" disabled />
+          <Button
+            label={
+              voiceSession
+                ? '■ Stop — structure the note'
+                : captureBusy === 'voice'
+                  ? 'Structuring…'
+                  : voiceAvailable()
+                    ? '🎙 Voice note'
+                    : 'Voice note — needs dev build'
+            }
+            variant={voiceSession ? 'default' : 'outline'}
+            onPress={() => void onVoicePress()}
+            disabled={captureBusy !== null || !voiceAvailable()}
+          />
+          <Button
+            label={captureBusy === 'photo' ? 'Reading…' : '📷 Photo / screenshot'}
+            variant="outline"
+            onPress={() => void onPhotoPress()}
+            disabled={captureBusy !== null || voiceSession !== null}
+          />
+          {transcript !== '' ? (
+            <Text variant="muted" className="text-sm" numberOfLines={4}>
+              “{transcript}”
+            </Text>
+          ) : null}
+          {captureNote ? (
+            <Text className="text-sm text-gain">{captureNote}</Text>
+          ) : null}
           <Text variant="muted" className="text-xs">
-            Voice (on-device speech) and vision capture arrive with the iOS dev build; both feed
-            the same dedup pipeline the CSV import uses.
+            Speech and OCR run on this device — only redacted text is sent for structuring, and
+            nothing saves without your review below.
           </Text>
         </CardContent>
       </Card>
